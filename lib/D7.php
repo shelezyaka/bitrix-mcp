@@ -286,18 +286,22 @@ class D7
 		while ($r = $rs->fetch()) { $map[(int)$r['ID']] = (string)$r['VALUE']; }
 
 		foreach ($items as &$row) {
-			foreach ((array)($row['PROPERTIES'] ?? []) as $code => &$p) {
+			if (empty($row['PROPERTIES'])) { continue; }
+			// ⚠ Обходим сам массив, а не «(array)$row['PROPERTIES']»: приведение
+			// типа делает КОПИЮ, ссылка уходит в неё, и подмена значения теряется —
+			// именно так METALL и остался «516» после первой правки.
+			foreach ($row['PROPERTIES'] as $code => $p) {
 				if (($meta[$code]['type'] ?? '') !== 'L') { continue; }
 				if (is_array($p['value'])) {
-					foreach ($p['value'] as &$v) { $v = $map[(int)$v] ?? $v; }
-					unset($v);
+					foreach ($p['value'] as $i => $v) {
+						$row['PROPERTIES'][$code]['value'][$i] = $map[(int)$v] ?? $v;
+					}
 				} elseif ((string)$p['value'] !== '') {
 					// Неизвестный идентификатор оставляем как есть: подменять его
 					// пустотой значит потерять то единственное, что мы знаем.
-					$p['value'] = $map[(int)$p['value']] ?? $p['value'];
+					$row['PROPERTIES'][$code]['value'] = $map[(int)$p['value']] ?? $p['value'];
 				}
 			}
-			unset($p);
 		}
 		unset($row);
 	}
@@ -305,8 +309,13 @@ class D7
 	/**
 	 * Адрес детальной страницы.
 	 *
-	 * Это шаблон инфоблока, подставляет его ядро. Шаблону нужны SITE_DIR и путь
-	 * разделов: без них адрес собирался в «catalog/» вместо «/catalog/sergi/548/».
+	 * Это шаблон инфоблока, подставляет его ядро.
+	 *
+	 * ⚠ Четвёртый аргумент обязан быть 'E'. Метки #ELEMENT_ID#, #SECTION_ID#,
+	 * #SECTION_CODE# и #SECTION_CODE_PATH# ядро заполняет ТОЛЬКО в этом режиме;
+	 * без него они молча заменяются пустотой, и адрес собирается в «/catalog/»
+	 * вместо «/catalog/sergi/548/». Путь разделов ядро считает само и кэширует —
+	 * своего вычисления не нужно.
 	 */
 	private static function fillUrls(int $iblock, array &$items, array $raw): void
 	{
@@ -314,15 +323,9 @@ class D7
 		$tpl = (string)($ib['DETAIL_PAGE_URL'] ?? '');
 		if ($tpl === '') { return; }
 
-		$paths = [];
 		foreach ($items as $id => &$row) {
 			$r    = $raw[$id] ?? [];
 			$code = (string)($r['CODE'] ?? '');
-			$sec  = (int)($r['IBLOCK_SECTION_ID'] ?? 0);
-
-			if ($sec > 0 && !isset($paths[$sec])) {
-				$paths[$sec] = (string)\CIBlockSection::getSectionCodePath($sec);
-			}
 
 			$row['DETAIL_PAGE_URL'] = \CIBlock::ReplaceDetailUrl($tpl, [
 				'ID'                 => $id,
@@ -333,12 +336,10 @@ class D7
 				'IBLOCK_CODE'        => (string)($ib['CODE'] ?? ''),
 				'IBLOCK_TYPE_ID'     => (string)($ib['IBLOCK_TYPE_ID'] ?? ''),
 				'IBLOCK_EXTERNAL_ID' => (string)($ib['XML_ID'] ?? ''),
-				'IBLOCK_SECTION_ID'  => $sec,
-				'SECTION_CODE_PATH'  => $paths[$sec] ?? '',
-				'SITE_DIR'           => defined('SITE_DIR') ? SITE_DIR : '/',
+				'IBLOCK_SECTION_ID'  => (int)($r['IBLOCK_SECTION_ID'] ?? 0),
+				// #SITE_DIR# берётся отсюда, когда адрес собирается без имени сервера.
 				'LANG_DIR'           => defined('SITE_DIR') ? SITE_DIR : '/',
-				'LID'                => defined('SITE_ID') ? SITE_ID : '',
-			], true, false);
+			], false, 'E');
 		}
 		unset($row);
 	}
