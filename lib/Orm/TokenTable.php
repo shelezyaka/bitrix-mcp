@@ -23,8 +23,10 @@ class TokenTable extends DataManager
 			new Fields\StringField('TOKEN_HASH', ['size' => 64, 'required' => true]),
 			new Fields\StringField('HINT', ['size' => 16]),
 			new Fields\IntegerField('USER_ID'),
-			// Пусто — все инструменты, разрешённые настройкой сайта.
+			// Группы инструментов: catalog, api. Пусто — все, что разрешены сайтом.
 			new Fields\TextField('TOOLS'),
+			// Инфоблоки, доступные этому токену. Пусто — весь белый список сайта.
+			new Fields\TextField('IBLOCKS'),
 			new Fields\BooleanField('ACTIVE', ['values' => ['N', 'Y'], 'default_value' => 'Y']),
 			// NULL здесь означает «бессрочно» и «ещё не звали» — состояния нужные.
 			new Fields\DatetimeField('EXPIRES_AT', ['nullable' => true]),

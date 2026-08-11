@@ -9,14 +9,28 @@ class Tools
 {
 	const PROPS_IN_DESC = 40;
 
-	/** @param string[]|null $allow null — всё разрешённое настройкой */
-	public static function build(?array $allow = null): Registry
+	/** Группы инструментов, из которых складываются права токена. */
+	const GROUPS = [
+		'catalog' => 'Каталог: поиск элементов, карточка, разделы',
+		'api'     => 'Разведка API: классы, сущности, исходники, модули',
+	];
+
+	/**
+	 * @param string[]|null $groups null — все группы, разрешённые настройкой сайта
+	 */
+	public static function build(?array $groups = null): Registry
 	{
 		$reg = new Registry();
 
-		foreach (self::all() as $tool) {
-			if ($allow !== null && !in_array($tool->name, $allow, true)) { continue; }
-			$reg->add($tool);
+		$has = static function (string $g) use ($groups) {
+			return $groups === null || in_array($g, $groups, true);
+		};
+
+		foreach (self::all() as $group => $tools) {
+			// site_info доступен всегда: без него модель не знает, что ей открыто,
+			// и начинает подставлять идентификаторы наугад.
+			if ($group !== 'site' && !$has($group)) { continue; }
+			foreach ($tools as $tool) { $reg->add($tool); }
 		}
 
 		$open = Expose::ids();
@@ -33,10 +47,10 @@ class Tools
 		return $reg;
 	}
 
-	/** @return Tool[] */
+	/** @return array<string, Tool[]> группа => инструменты */
 	private static function all(): array
 	{
-		$tools = [
+		$site = [
 			new Tool(
 				'site_info',
 				'Сведения о сайте',
@@ -50,14 +64,15 @@ class Tools
 
 		// Разведка API не зависит от белого списка инфоблоков: она про устройство
 		// кода, а не про данные.
-		$tools = array_merge($tools, self::apiTools());
+		$out = ['site' => $site, 'api' => self::apiTools(), 'catalog' => []];
 
 		// Инструменты чтения появляются, только если что-то открыто: иначе модель
 		// зовёт их и получает отказ на каждый вызов.
-		if (!Expose::ids()) { return $tools; }
+		if (!Expose::ids()) { return $out; }
 
 		$where = self::describeIblocks();
 
+		$tools = [];
 		$tools[] = new Tool(
 			'element_search',
 			'Поиск элементов',
@@ -121,7 +136,9 @@ class Tools
 			[Data::class, 'sections']
 		);
 
-		return $tools;
+		$out['catalog'] = $tools;
+
+		return $out;
 	}
 
 	/**

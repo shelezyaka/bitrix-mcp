@@ -25,6 +25,11 @@ class Auth
 		Audit::note(['TOKEN_ID' => (int)$row['ID']]);
 		Token::touch($row);
 
-		return Tools::build(Token::allowed($row));
+		// Сужение инфоблоков ставится до сборки реестра: описания инструментов
+		// строятся из того же списка, и они должны совпадать с тем, что токену
+		// реально доступно.
+		Expose::restrictTo(Token::iblocks($row));
+
+		return Tools::build(Token::groups($row));
 	}
 }

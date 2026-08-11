@@ -23,6 +23,23 @@ $rights   = $APPLICATION->GetGroupRight($module_id);
 if ($rights < 'R') { return; }
 $canWrite = ($rights >= 'W');
 
+/**
+ * Строка «18, 21» → список идентификаторов; пусто → null («без сужения»).
+ * Пустой список и «без ограничения» — разные вещи, поэтому null, а не [].
+ */
+function itbMcpIblockList(string $raw): ?array
+{
+	$raw = trim($raw);
+	if ($raw === '') { return null; }
+
+	$ids = [];
+	foreach (preg_split('~[^0-9]+~', $raw) as $v) {
+		if ((int)$v > 0) { $ids[] = (int)$v; }
+	}
+
+	return $ids;
+}
+
 // Схема сверяется и здесь, а не только при установке: иначе правку структуры
 // получали бы только новые сайты.
 $repairs = \Itb\Mcp\Setup::ensureSchema();
@@ -46,9 +63,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			$r = \Itb\Mcp\Token::issue(
 				trim((string)($_POST['title'] ?? '')),
 				trim((string)($_POST['expires'] ?? '')),
-				null,
-				(int)$GLOBALS['USER']->GetID()
+				array_values((array)($_POST['groups'] ?? [])),
+				(int)$GLOBALS['USER']->GetID(),
+				itbMcpIblockList((string)($_POST['tok_iblocks'] ?? ''))
 			);
+		} elseif ($act === 'rights') {
+			$id = (int)$arg;
+			\Itb\Mcp\Token::setRights(
+				$id,
+				array_values((array)($_POST['g'][$id] ?? [])),
+				itbMcpIblockList((string)($_POST['ib_tok'][$id] ?? ''))
+			);
+			$msg = 'Права токена ' . $id . ' изменены.';
 			// Единственный момент, когда токен виден: в базе только sha256.
 			$freshToken = $r['token'];
 		} elseif ($act === 'expose') {
@@ -151,26 +177,40 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<table class="internal" style="width:100%">
 			<tr class="heading">
 				<td>ID</td><td>Название</td><td>Хвост</td><td>Состояние</td>
-				<td>Действует до</td><td>Последний вызов</td><td>Вызовов</td><td>&nbsp;</td>
+				<td>Действует до</td><td>Вызовов</td><td>Что можно</td><td>&nbsp;</td>
 			</tr>
 			<?php if (!$tokens): ?>
 				<tr><td colspan="8" style="text-align:center;color:#777">Токенов нет</td></tr>
 			<?php endif; ?>
 			<?php foreach ($tokens as $t):
-				$why = \Itb\Mcp\Token::why($t, time()); ?>
+				$tid = (int)$t['ID'];
+				$why = \Itb\Mcp\Token::why($t, time());
+				$gr  = \Itb\Mcp\Token::groups($t);
+				$ibl = \Itb\Mcp\Token::iblocks($t); ?>
 			<tr>
-				<td><?php echo (int)$t['ID']; ?></td>
+				<td><?php echo $tid; ?></td>
 				<td><?php echo htmlspecialcharsbx((string)$t['TITLE']); ?></td>
 				<td><code>…<?php echo htmlspecialcharsbx((string)$t['HINT']); ?></code></td>
 				<td><?php echo $why === null
 					? '<b style="color:#1a7f37">действует</b>'
 					: '<span style="color:#c0392b">' . htmlspecialcharsbx($why) . '</span>'; ?></td>
 				<td><?php echo $t['EXPIRES_AT'] ? htmlspecialcharsbx((string)$t['EXPIRES_AT']) : 'бессрочно'; ?></td>
-				<td><?php echo $t['LAST_USED_AT'] ? htmlspecialcharsbx((string)$t['LAST_USED_AT']) : '—'; ?></td>
 				<td><?php echo (int)$t['USE_COUNT']; ?></td>
-				<td><?php if ($canWrite): ?>
-					<button type="submit" name="act" value="revoke:<?php echo (int)$t['ID']; ?>">отозвать</button>
-					<button type="submit" name="act" value="drop:<?php echo (int)$t['ID']; ?>">удалить</button>
+				<td style="white-space:nowrap">
+					<?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label): ?>
+					<label title="<?php echo htmlspecialcharsbx($label); ?>"><input type="checkbox"
+						name="g[<?php echo $tid; ?>][]" value="<?php echo htmlspecialcharsbx($key); ?>"<?php
+						echo ($gr === null || in_array($key, $gr, true)) ? ' checked' : ''; ?>>
+						<?php echo $key === 'catalog' ? 'каталог' : 'API'; ?></label>
+					<?php endforeach; ?>
+					<br><input type="text" name="ib_tok[<?php echo $tid; ?>]" size="16"
+						value="<?php echo $ibl === null ? '' : htmlspecialcharsbx(implode(', ', $ibl)); ?>"
+						placeholder="инфоблоки: все">
+				</td>
+				<td style="white-space:nowrap"><?php if ($canWrite): ?>
+					<button type="submit" name="act" value="rights:<?php echo $tid; ?>">права</button>
+					<button type="submit" name="act" value="revoke:<?php echo $tid; ?>">отозвать</button>
+					<button type="submit" name="act" value="drop:<?php echo $tid; ?>">удалить</button>
 				<?php endif; ?></td>
 			</tr>
 			<?php endforeach; ?>
@@ -194,6 +234,20 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 					. htmlspecialcharsbx($defExpires) . '">';
 			}
 		?> <span style="color:#777">очистите поле — токен станет бессрочным</span></td>
+	</tr>
+	<tr>
+		<td>Что разрешить:</td>
+		<td><?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label): ?>
+			<label style="display:block"><input type="checkbox" name="groups[]"
+				value="<?php echo htmlspecialcharsbx($key); ?>" checked>
+				<?php echo htmlspecialcharsbx($label); ?></label>
+		<?php endforeach; ?>
+		<span style="color:#777">снимите обе — останется только <code>site_info</code></span></td>
+	</tr>
+	<tr>
+		<td>Инфоблоки (через запятую, пусто — все открытые):</td>
+		<td><input type="text" name="tok_iblocks" size="30" placeholder="например 18, 21">
+			<span style="color:#777">сужает белый список сайта, расширить не может</span></td>
 	</tr>
 	<tr>
 		<td>&nbsp;</td>

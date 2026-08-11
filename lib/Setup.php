@@ -8,7 +8,7 @@ namespace Itb\Mcp;
 class Setup
 {
 	/** Поднимать при каждом изменении структуры таблиц. */
-	const SCHEMA_VERSION = 2;
+	const SCHEMA_VERSION = 3;
 
 	const OPT = 'schema_version';
 
@@ -34,6 +34,19 @@ class Setup
 				} catch (\Throwable $e) {
 					$done[] = $t . '.' . $c . ' — не удалось: ' . $e->getMessage();
 				}
+			}
+		}
+
+		// Версия 3: у токена появился свой список инфоблоков.
+		if ($have < 3 && $db->isTableExists('itb_mcp_token')) {
+			try {
+				$cols = $db->getTableFields('itb_mcp_token');
+				if (!isset($cols['IBLOCKS'])) {
+					$db->query('ALTER TABLE `itb_mcp_token` ADD COLUMN `IBLOCKS` text NULL');
+					$done[] = 'itb_mcp_token.IBLOCKS добавлена';
+				}
+			} catch (\Throwable $e) {
+				$done[] = 'itb_mcp_token.IBLOCKS — не удалось: ' . $e->getMessage();
 			}
 		}
 

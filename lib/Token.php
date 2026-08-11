@@ -80,12 +80,33 @@ class Token
 	}
 
 	/**
-	 * Белый список инструментов токена: null — все разрешённые настройкой.
-	 * Пустой список означает «ни одного» и во «все» не превращается.
+	 * Группы инструментов токена: null — все, разрешённые настройкой сайта.
+	 * Пустой список означает «ни одной» и во «все» не превращается.
 	 */
-	public static function allowed(array $row): ?array
+	public static function groups(array $row): ?array
 	{
-		$raw = trim((string)($row['TOOLS'] ?? ''));
+		return self::listOf((string)($row['TOOLS'] ?? ''));
+	}
+
+	/**
+	 * Инфоблоки токена: null — весь белый список сайта.
+	 * Список сужает его, но расширить не может — пересечение считает Expose.
+	 */
+	public static function iblocks(array $row): ?array
+	{
+		$list = self::listOf((string)($row['IBLOCKS'] ?? ''));
+		if ($list === null) { return null; }
+
+		$ids = [];
+		foreach ($list as $v) { if ((int)$v > 0) { $ids[] = (int)$v; } }
+
+		return $ids;
+	}
+
+	/** Разбор поля-списка: json либо перечисление через запятую и переносы. */
+	private static function listOf(string $raw): ?array
+	{
+		$raw = trim($raw);
 		if ($raw === '') { return null; }
 
 		$list = json_decode($raw, true);
@@ -131,8 +152,8 @@ class Token
 	 * Выпуск. Открытый токен возвращается единственный раз за его жизнь.
 	 * @return array{id:int,token:string}
 	 */
-	public static function issue(string $title, ?string $expires = null, ?array $tools = null,
-		int $userId = 0): array
+	public static function issue(string $title, ?string $expires = null, ?array $groups = null,
+		int $userId = 0, ?array $iblocks = null): array
 	{
 		$g  = self::generate();
 		$ts = self::normalizeExpires((string)$expires);
@@ -142,7 +163,8 @@ class Token
 			'TOKEN_HASH' => $g['hash'],
 			'HINT'       => $g['hint'],
 			'USER_ID'    => $userId,
-			'TOOLS'      => $tools === null ? '' : json_encode(array_values($tools)),
+			'TOOLS'      => $groups === null ? '' : json_encode(array_values($groups)),
+			'IBLOCKS'    => $iblocks === null ? '' : json_encode(array_values(array_map('intval', $iblocks))),
 			'ACTIVE'     => 'Y',
 			'CREATED_AT' => new \Bitrix\Main\Type\DateTime(),
 			'CREATED_BY' => $userId,
@@ -157,6 +179,15 @@ class Token
 		$r = TokenTable::add($row);
 
 		return ['id' => (int)$r->getId(), 'token' => $g['token']];
+	}
+
+	/** Смена прав уже выпущенного токена. null — «без ограничения». */
+	public static function setRights(int $id, ?array $groups, ?array $iblocks): void
+	{
+		TokenTable::update($id, [
+			'TOOLS'   => $groups === null ? '' : json_encode(array_values($groups)),
+			'IBLOCKS' => $iblocks === null ? '' : json_encode(array_values(array_map('intval', $iblocks))),
+		]);
 	}
 
 	public static function revoke(int $id): void

@@ -40,10 +40,32 @@ class Expose
 		return $out;
 	}
 
-	/** @return array<int, array{props: string[]|null}> */
+	/**
+	 * Сужение под текущий токен: null — без ограничения.
+	 * Ставится один раз при авторизации, один запрос — один токен.
+	 */
+	private static $only = null;
+
+	public static function restrictTo(?array $ids): void
+	{
+		self::$only = $ids === null ? null : array_map('intval', $ids);
+	}
+
+	/**
+	 * Открытые инфоблоки с учётом прав токена.
+	 *
+	 * Список токена только СУЖАЕТ настройку сайта: инфоблок, не открытый в
+	 * админке, токеном не добавляется. Иначе право выдавалось бы в двух местах,
+	 * и закрыть его в одном было бы недостаточно.
+	 *
+	 * @return array<int, array{props: string[]|null}>
+	 */
 	public static function all(): array
 	{
-		return self::parse((string)\Bitrix\Main\Config\Option::get('itb.mcp', self::OPT, ''));
+		$map = self::parse((string)\Bitrix\Main\Config\Option::get('itb.mcp', self::OPT, ''));
+		if (self::$only === null) { return $map; }
+
+		return array_intersect_key($map, array_flip(self::$only));
 	}
 
 	public static function save(array $map): void
