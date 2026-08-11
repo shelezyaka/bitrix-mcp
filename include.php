@@ -16,6 +16,7 @@
 	'Itb\\Mcp\\Auth'      => 'lib/Auth.php',
 	'Itb\\Mcp\\Token'     => 'lib/Token.php',
 	'Itb\\Mcp\\Audit'     => 'lib/Audit.php',
+	'Itb\\Mcp\\Setup'     => 'lib/Setup.php',
 	'Itb\\Mcp\\Tools'     => 'lib/Tools.php',
 	'Itb\\Mcp\\Server'    => 'lib/Server.php',
 

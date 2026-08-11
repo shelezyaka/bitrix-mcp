@@ -88,8 +88,17 @@ class Token
 			// разделитель по-разному в зависимости от локали сборки PHP, и
 			// «01.02.2027» может оказаться февралём, а может январём.
 			if (preg_match('~^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$~', trim($exp), $m)) {
-				return mktime((int)($m[4] ?? 0), (int)($m[5] ?? 0), (int)($m[6] ?? 0),
-					(int)$m[2], (int)$m[1], (int)$m[3]);
+				[$d, $mo, $y] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+				// ⚠️⚠️ `checkdate` обязателен: `mktime` диапазоны НЕ проверяет, а
+				// молча пересчитывает. «31.31.2027» он превращает в июль 2029 —
+				// опечатка становится сроком, которого никто не задавал, и
+				// выглядит это как обычная дата. Поймано тестом.
+				if (!checkdate($mo, $d, $y)) { return false; }
+
+				$h = (int)($m[4] ?? 0); $i = (int)($m[5] ?? 0); $s = (int)($m[6] ?? 0);
+				if ($h > 23 || $i > 59 || $s > 59) { return false; }
+
+				return mktime($h, $i, $s, $mo, $d, $y);
 			}
 			$t = strtotime($exp);
 			if ($t !== false) { return $t; }
@@ -147,23 +156,55 @@ class Token
 	public static function issue(string $title, ?string $expires = null, ?array $tools = null,
 		int $userId = 0): array
 	{
-		$g = self::generate();
+		$g   = self::generate();
+		$ts  = self::normalizeExpires((string)$expires);
 
-		$r = TokenTable::add([
+		$row = [
 			'TITLE'      => $title !== '' ? $title : 'без названия',
 			'TOKEN_HASH' => $g['hash'],
 			'HINT'       => $g['hint'],
 			'USER_ID'    => $userId,
 			'TOOLS'      => $tools === null ? '' : json_encode(array_values($tools)),
 			'ACTIVE'     => 'Y',
-			'EXPIRES_AT' => ($expires !== null && $expires !== '')
-				? new \Bitrix\Main\Type\DateTime($expires, 'd.m.Y') : null,
 			'CREATED_AT' => new \Bitrix\Main\Type\DateTime(),
 			'CREATED_BY' => $userId,
 			'USE_COUNT'  => 0,
-		]);
+		];
+		// ⚠️ Бессрочный токен — это ОТСУТСТВИЕ поля, а не поле со значением null.
+		// Разница видна только на боевой таблице: колонку могли создать NOT NULL
+		// (так и было — «Column 'EXPIRES_AT' cannot be null»), и явный null её
+		// роняет, а пропущенное поле проходит.
+		if ($ts !== null) {
+			$row['EXPIRES_AT'] = \Bitrix\Main\Type\DateTime::createFromTimestamp($ts);
+		}
+
+		$r = TokenTable::add($row);
 
 		return ['id' => (int)$r->getId(), 'token' => $g['token']];
+	}
+
+	/**
+	 * Введённый человеком срок → метка времени, либо null для бессрочного.
+	 *
+	 * ⚠️ Непонятная дата — это ОТКАЗ, а не «ну пусть будет бессрочный». Опечатка
+	 * в поле срока не должна молча превращаться в вечный доступ; на неё надо
+	 * посмотреть и исправить.
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	public static function normalizeExpires(string $raw): ?int
+	{
+		$raw = trim($raw);
+		if ($raw === '') { return null; }
+
+		$ts = self::expiresTs(['EXPIRES_AT' => $raw]);
+		if ($ts === false || $ts === null) {
+			throw new \InvalidArgumentException(
+				'Дата «' . $raw . '» не разбирается. Ожидается ДД.ММ.ГГГГ, '
+				. 'либо оставьте поле пустым — тогда токен бессрочный.');
+		}
+
+		return $ts;
 	}
 
 	public static function revoke(int $id): void

@@ -27,6 +27,11 @@ $rights   = $APPLICATION->GetGroupRight($module_id);
 if ($rights < 'R') { return; }
 $canWrite = ($rights >= 'W');
 
+// ⚠️ Схема сверяется при открытии настроек, а не только при установке. Иначе
+// правку структуры получают лишь новые сайты, а поставившим модуль раньше
+// пришлось бы удалять его и ставить заново — вместе с токенами и журналом.
+$repairs = \Itb\Mcp\Setup::ensureSchema();
+
 $freshToken = '';
 $msg = '';
 $err = '';
@@ -80,6 +85,11 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 	['DIV' => 'log',      'TAB' => 'Журнал',    'TITLE' => 'Последние обращения'],
 ]);
 ?>
+<?php if ($repairs): ?>
+<div class="adm-info-message-wrap"><div class="adm-info-message">
+	Схема базы обновлена: <?php echo htmlspecialcharsbx(implode('; ', $repairs)); ?>.
+</div></div>
+<?php endif; ?>
 <?php if ($err !== ''): ?>
 <div class="adm-info-message-wrap adm-info-message-red"><div class="adm-info-message"><?php
 	echo htmlspecialcharsbx($err); ?></div></div>
@@ -153,8 +163,23 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<td><input type="text" name="title" size="40" value="рабочая машина"></td>
 	</tr>
 	<tr>
-		<td>Действует до (ДД.ММ.ГГГГ, пусто — бессрочно):</td>
-		<td><input type="text" name="expires" size="20" value=""></td>
+		<td>Действует до:</td>
+		<td><?php
+			// ⚠️ Полгода по умолчанию, а не «бессрочно». Бессрочный токен никто
+			// потом не отзывает — он просто остаётся жить, и через год уже никто
+			// не помнит, чья это машина и нужен ли он ещё. Срок заставляет
+			// вспомнить об этом хотя бы дважды в год; очистить поле по-прежнему
+			// можно, и тогда токен бессрочный.
+			$defExpires = date('d.m.Y', strtotime('+6 months'));
+			// Календарь Битрикса, если он доступен: своё поле ввода даты в админке
+			// выглядит чужеродно и ведёт себя иначе, чем все соседние.
+			if (class_exists('CAdminCalendar')) {
+				echo CAdminCalendar::CalendarDate('expires', $defExpires, 12, false);
+			} else {
+				echo '<input type="text" name="expires" size="12" value="'
+					. htmlspecialcharsbx($defExpires) . '">';
+			}
+		?> <span style="color:#777">очистите поле — токен станет бессрочным</span></td>
 	</tr>
 	<tr>
 		<td>&nbsp;</td>

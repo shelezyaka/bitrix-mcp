@@ -38,10 +38,14 @@ class TokenTable extends DataManager
 			// вещи, поэтому второе задаётся снятием ACTIVE, а не пустым списком.
 			new Fields\TextField('TOOLS'),
 			new Fields\BooleanField('ACTIVE', ['values' => ['N', 'Y'], 'default_value' => 'Y']),
-			new Fields\DatetimeField('EXPIRES_AT'),
+			// ⚠️⚠️ Обе даты обязаны быть NULL-евыми, и это не мелочь оформления.
+			// Пустой срок означает «бессрочно», пустая дата последнего вызова —
+			// «ещё не звали». Колонка NOT NULL делает оба состояния невыразимыми:
+			// выпуск бессрочного токена падает с «Column EXPIRES_AT cannot be null».
+			new Fields\DatetimeField('EXPIRES_AT', ['nullable' => true]),
 			new Fields\DatetimeField('CREATED_AT'),
 			new Fields\IntegerField('CREATED_BY'),
-			new Fields\DatetimeField('LAST_USED_AT'),
+			new Fields\DatetimeField('LAST_USED_AT', ['nullable' => true]),
 			new Fields\IntegerField('USE_COUNT', ['default_value' => 0]),
 		];
 	}

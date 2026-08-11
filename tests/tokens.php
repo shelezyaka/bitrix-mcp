@@ -53,6 +53,27 @@ is_('мусор — НЕ бессрочно, а испорчено',
 is_('испорченный срок закрывает доступ',
 	Token::why(['ACTIVE' => 'Y', 'EXPIRES_AT' => 'когда-нибудь'], $NOW), 'срок действия не читается');
 
+echo "\n=== Ввод срока действия ===\n";
+is_('пусто = бессрочно',      Token::normalizeExpires(''), null);
+is_('пробелы = бессрочно',    Token::normalizeExpires('   '), null);
+is_('ДД.ММ.ГГГГ',             Token::normalizeExpires('11.02.2027'), mktime(0, 0, 0, 2, 11, 2027));
+is_('ISO из <input type=date>', Token::normalizeExpires('2027-02-11'), mktime(0, 0, 0, 2, 11, 2027));
+$caught = null;
+try { Token::normalizeExpires('31.31.2027'); } catch (\InvalidArgumentException $e) { $caught = 'отказ'; }
+is_('несуществующая дата — ОТКАЗ, а не «бессрочно»', $caught, 'отказ');
+$caught = null;
+try { Token::normalizeExpires('как-нибудь потом'); } catch (\InvalidArgumentException $e) { $caught = 'отказ'; }
+is_('мусор — ОТКАЗ, а не «бессрочно»', $caught, 'отказ');
+// ⚠️ mktime пересчитывает выход за диапазон молча: без checkdate «31.31.2027»
+// становилось июлем 2029, а «32.01» — первым февраля. Это не придирка к вводу:
+// такой срок выглядит настоящим, и понять, откуда он взялся, нельзя.
+is_('31-й месяц не существует',  Token::expiresTs(['EXPIRES_AT' => '31.31.2027']), false);
+is_('32-е число не существует',  Token::expiresTs(['EXPIRES_AT' => '32.01.2027']), false);
+is_('29 февраля 2027 не бывает', Token::expiresTs(['EXPIRES_AT' => '29.02.2027']), false);
+is_('29 февраля 2028 бывает',
+	Token::expiresTs(['EXPIRES_AT' => '29.02.2028']), mktime(0, 0, 0, 2, 29, 2028));
+is_('25 часов не бывает',        Token::expiresTs(['EXPIRES_AT' => '01.01.2027 25:00']), false);
+
 echo "\n=== Белый список инструментов ===\n";
 is_('пусто = все разрешённые настройкой', Token::allowed(['TOOLS' => '']), null);
 is_('поля нет вовсе = все',               Token::allowed([]), null);

@@ -172,6 +172,14 @@ class itb_mcp extends CModule
 			$db->createIndex($l, 'ix_itb_mcp_log_date', ['CREATED_AT']);
 		}
 
+		// ⚠️ Сверка схемы гоняется и на свежей установке. `createDbTable()`
+		// строит колонки по описанию полей, но делает это не всегда так, как
+		// описание читается глазами: NULL-евые даты он однажды уже сделал
+		// NOT NULL. Одна и та же проверка на новых и старых сайтах означает, что
+		// расхождений между ними не бывает по определению.
+		require_once __DIR__ . '/../lib/Setup.php';
+		\Itb\Mcp\Setup::ensureSchema();
+
 		return true;
 	}
 
