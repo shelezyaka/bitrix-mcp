@@ -33,7 +33,7 @@ $authorize = function (string $t) use ($reg) {
 	return $reg;
 };
 $dispatch = function (array $m, Registry $r) { return Protocol::dispatch($m, $r); };
-$ORIGINS  = ['https://k-presnya.ru'];
+$ORIGINS  = ['https://shop.example.com'];
 
 $H = ['Content-Type' => 'application/json', 'Authorization' => 'Bearer good-token'];
 function call(array $h, $body, string $method = 'POST') {
@@ -51,7 +51,7 @@ is_('чужой Content-Type → 415',
 	call(['Content-Type' => 'text/plain', 'Authorization' => 'Bearer good-token'], '{}')['status'], 415);
 is_('чужой Origin → 403',   call($H + ['Origin' => 'https://evil.example'], [])['status'], 403);
 is_('свой Origin проходит',
-	rpc($H + ['Origin' => 'https://k-presnya.ru'], ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'])['status'], 200);
+	rpc($H + ['Origin' => 'https://shop.example.com'], ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'])['status'], 200);
 is_('без Origin проходит',  rpc($H, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'])['status'], 200);
 is_('чужой токен → 401',
 	call(['Content-Type' => 'application/json', 'Authorization' => 'Bearer nope'], [])['status'], 401);

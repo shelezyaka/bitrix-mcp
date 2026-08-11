@@ -106,7 +106,7 @@ say('в $_SERVER сейчас', isset($_SERVER['HTTP_AUTHORIZATION'])
 echo "\n=== Проверка боем ===\n";
 $https = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
 // HTTP_HOST приходит с портом; для стандартного его убираем, иначе в готовой
-// команде оказывается «k-presnya.ru:443».
+// команде оказывается «example.com:443».
 $host  = (string)($_SERVER['HTTP_HOST'] ?? '');
 $host  = preg_replace($https ? '~:443$~' : '~:80$~', '', $host);
 $url   = ($https ? 'https://' : 'http://') . $host . '/mcp/';
