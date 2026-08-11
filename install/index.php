@@ -40,6 +40,10 @@ class itb_mcp extends CModule
 	{
 		global $APPLICATION;
 		try {
+			// ⚠️ Порядок: сперва таблицы, потом регистрация. Модуль,
+			// зарегистрированный без своих таблиц, поднимается и падает на первом
+			// же запросе — а выглядит установленным.
+			$this->InstallDB();
 			$this->InstallFiles();
 			\Bitrix\Main\ModuleManager::registerModule($this->MODULE_ID);
 		} catch (\Throwable $e) {
@@ -53,10 +57,59 @@ class itb_mcp extends CModule
 	{
 		\Bitrix\Main\ModuleManager::unRegisterModule($this->MODULE_ID);
 		$this->UnInstallFiles();
+		$this->UnInstallDB();
 		// ⚠️ Настройки (в т.ч. хеш токена) стираем: оставленный хеш означает, что
 		// после повторной установки старый токен снова заработает, а владелец
 		// сайта считает, что доступ отозван вместе с модулем.
 		\Bitrix\Main\Config\Option::delete($this->MODULE_ID);
+		return true;
+	}
+
+	/**
+	 * Таблицы токенов и журнала.
+	 *
+	 * ⚠️ Создаём через ORM (`createDbTable`), а не своим SQL: типы полей описаны
+	 * в одном месте — в классе таблицы, — и не разъедутся между описанием и
+	 * установкой. Индекс по хешу добавляем отдельно: его ORM не делает, а поиск
+	 * токена идёт именно по нему на каждом запросе.
+	 */
+	public function InstallDB()
+	{
+		\Bitrix\Main\Loader::includeModule('main');
+		require_once __DIR__ . '/../include.php';
+
+		$db = \Bitrix\Main\Application::getConnection();
+
+		foreach ([\Itb\Mcp\Orm\TokenTable::class, \Itb\Mcp\Orm\LogTable::class] as $cls) {
+			if (!$db->isTableExists($cls::getTableName())) {
+				$cls::getEntity()->createDbTable();
+			}
+		}
+
+		$t = \Itb\Mcp\Orm\TokenTable::getTableName();
+		if (!$db->isIndexExists($t, ['TOKEN_HASH'])) {
+			$db->createIndex($t, 'ix_itb_mcp_token_hash', ['TOKEN_HASH'], null,
+				$db::INDEX_UNIQUE);
+		}
+		$l = \Itb\Mcp\Orm\LogTable::getTableName();
+		if (!$db->isIndexExists($l, ['CREATED_AT'])) {
+			$db->createIndex($l, 'ix_itb_mcp_log_date', ['CREATED_AT']);
+		}
+
+		return true;
+	}
+
+	/**
+	 * ⚠️ Таблицы при удалении СНОСЯТСЯ вместе с токенами. Оставленный хеш означает,
+	 * что после повторной установки старый токен снова заработает, а владелец
+	 * сайта уверен, что доступ отозван вместе с модулем.
+	 */
+	public function UnInstallDB()
+	{
+		$db = \Bitrix\Main\Application::getConnection();
+		foreach (['itb_mcp_log', 'itb_mcp_token'] as $t) {
+			if ($db->isTableExists($t)) { $db->dropTable($t); }
+		}
 		return true;
 	}
 

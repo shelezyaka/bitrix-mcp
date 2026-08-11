@@ -19,12 +19,25 @@ class Server
 {
 	public static function handle(): void
 	{
+		Audit::start();
+
+		// ⚠️ Фатальная ошибка не проходит через наш код вовсе: ответ обрывается,
+		// и в журнале не остаётся ничего — то есть самый интересный случай виден
+		// хуже всех остальных. Завершающий обработчик дописывает строку и тогда.
+		register_shutdown_function(static function () {
+			$e = error_get_last();
+			if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+				Audit::note(['ERROR' => mb_substr('fatal: ' . $e['message'], 0, 255)]);
+				Audit::flush(500, 0);
+			}
+		});
+
 		$r = Transport::respond(
 			(string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
 			self::headers(),
 			(string)file_get_contents('php://input'),
 			[Auth::class, 'registryFor'],
-			[Protocol::class, 'dispatch'],
+			[self::class, 'dispatch'],
 			self::origins()
 		);
 
@@ -34,9 +47,42 @@ class Server
 
 		http_response_code($r['status']);
 		foreach ($r['headers'] as $k => $v) { header($k . ': ' . $v); }
-		// Ответы серверов MCP кэшировать нельзя: это данные, а не страница.
+		// Ответы MCP кэшировать нельзя: это данные, а не страница.
 		header('Cache-Control: no-store');
 		echo $r['body'];
+
+		Audit::flush($r['status'], strlen($r['body']));
+	}
+
+	/**
+	 * Обёртка над ядром протокола: то же самое плюс запись в журнал.
+	 *
+	 * ⚠️ Именно обёртка, а не правка `Protocol`: ядро обязано оставаться без
+	 * побочных действий, иначе его нельзя гонять тестом.
+	 */
+	public static function dispatch(array $msg, Registry $reg): ?array
+	{
+		$method = (string)($msg['method'] ?? '');
+		Audit::note(['RPC_METHOD' => mb_substr($method, 0, 64)]);
+
+		if ($method === 'tools/call') {
+			$p = isset($msg['params']) && is_array($msg['params']) ? $msg['params'] : [];
+			Audit::note(['TOOL' => mb_substr((string)($p['name'] ?? ''), 0, 128)]);
+			Audit::args(isset($p['arguments']) && is_array($p['arguments']) ? $p['arguments'] : []);
+		}
+
+		$res = Protocol::dispatch($msg, $reg);
+
+		// Ошибку протокола тоже видно в журнале: «инструмент звали, но не тот»
+		// снаружи неотличимо от «не звали вовсе».
+		if (isset($res['error']['message'])) {
+			Audit::note(['ERROR' => mb_substr((string)$res['error']['message'], 0, 255)]);
+		} elseif (!empty($res['result']['isError'])) {
+			Audit::note(['ERROR' => mb_substr(
+				(string)($res['result']['content'][0]['text'] ?? 'isError'), 0, 255)]);
+		}
+
+		return $res;
 	}
 
 	/** Заголовки запроса в виде «имя => значение». */
@@ -59,9 +105,9 @@ class Server
 	/**
 	 * Разрешённые Origin.
 	 *
-	 * ⚠️ По умолчанию — домены самого сайта, а не «любой». Обычный MCP-клиент
-	 * заголовок Origin не шлёт вовсе и проверку проходит; заголовок появляется
-	 * там, где запрос делает браузер, — и вот его пускать некуда.
+	 * ⚠️ По умолчанию — пусто, то есть браузерам нельзя вовсе. Обычный MCP-клиент
+	 * заголовок Origin не шлёт и проверку проходит; заголовок появляется там, где
+	 * запрос делает браузер, — и вот его пускать некуда.
 	 */
 	private static function origins(): array
 	{

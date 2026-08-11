@@ -14,6 +14,11 @@
 	'Itb\\Mcp\\Protocol'  => 'lib/Protocol.php',
 	'Itb\\Mcp\\Transport' => 'lib/Transport.php',
 	'Itb\\Mcp\\Auth'      => 'lib/Auth.php',
+	'Itb\\Mcp\\Token'     => 'lib/Token.php',
+	'Itb\\Mcp\\Audit'     => 'lib/Audit.php',
 	'Itb\\Mcp\\Tools'     => 'lib/Tools.php',
 	'Itb\\Mcp\\Server'    => 'lib/Server.php',
+
+	'Itb\\Mcp\\Orm\\TokenTable' => 'lib/Orm/TokenTable.php',
+	'Itb\\Mcp\\Orm\\LogTable'   => 'lib/Orm/LogTable.php',
 ]);
