@@ -31,7 +31,9 @@ class D7
 	 */
 	public static function entityClass(int $iblock): ?string
 	{
-		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'engine', 'legacy') !== 'orm') { return null; }
+		// По умолчанию ORM. Инфоблок без API_CODE сущности не даёт, и тогда ниже
+		// вернётся null — Data сама уйдёт на старый путь, настройка ни при чём.
+		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'engine', 'orm') !== 'orm') { return null; }
 
 		static $cache = [];
 		if (array_key_exists($iblock, $cache)) { return $cache[$iblock]; }

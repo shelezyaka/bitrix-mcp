@@ -270,13 +270,16 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 	<tr>
 		<td>Читать через ORM (D7):</td>
 		<td><input type="checkbox" name="engine" value="orm"<?php
-			echo Option::get($module_id, 'engine', 'legacy') === 'orm' ? ' checked' : ''; ?>>
+			echo Option::get($module_id, 'engine', 'orm') === 'orm' ? ' checked' : ''; ?>>
 			свойства приходят вместе с элементами, а не запросом на каждый</td>
 	</tr>
 	<tr><td colspan="2" style="color:#777">
-		Без галки работает прежний путь (<code>CIBlockElement</code>) — проверенный,
-		но на каждый элемент делает отдельный запрос за свойствами. В ответе видно,
-		каким путём получены данные: поле <code>engine</code>.
+		Включено по умолчанию. Снятая галка возвращает прежний путь
+		(<code>CIBlockElement</code>): он делает отдельный запрос за свойствами на
+		каждый элемент, зато отбор по разделу учитывает все привязки, а не только
+		основной раздел. У инфоблоков без <code>API_CODE</code> модуль откатывается
+		на него сам. В ответе видно, каким путём получены данные: поле
+		<code>engine</code>.
 	</td></tr>
 	<tr class="heading"><td colspan="2">Разведка API</td></tr>
 	<tr>
