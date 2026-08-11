@@ -12,6 +12,7 @@ class Tools
 	/** Группы инструментов, из которых складываются права токена. */
 	const GROUPS = [
 		'catalog' => 'Каталог: поиск элементов, карточка, разделы',
+		'orders'  => 'Заказы: список, заказ целиком, статусы — с данными покупателей',
 		'api'     => 'Разведка API: классы, сущности, исходники, модули',
 	];
 
@@ -64,7 +65,8 @@ class Tools
 
 		// Разведка API не зависит от белого списка инфоблоков: она про устройство
 		// кода, а не про данные.
-		$out = ['site' => $site, 'api' => self::apiTools(), 'catalog' => []];
+		$out = ['site' => $site, 'api' => self::apiTools(),
+			'orders' => self::orderTools(), 'catalog' => []];
 
 		// Инструменты чтения появляются, только если что-то открыто: иначе модель
 		// зовёт их и получает отказ на каждый вызов.
@@ -139,6 +141,68 @@ class Tools
 		$out['catalog'] = $tools;
 
 		return $out;
+	}
+
+	/**
+	 * Заказы. Группа выключена по умолчанию: в свойствах заказа лежат имя,
+	 * телефон и адрес покупателя.
+	 *
+	 * @return Tool[]
+	 */
+	private static function orderTools(): array
+	{
+		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'orders', 'N') !== 'Y') { return []; }
+
+		return [
+			new Tool(
+				'order_search',
+				'Поиск заказов',
+				'Список заказов с отбором по номеру, статусу, датам, оплате и отмене.'
+				. ' Возвращает поля заказа без состава корзины и без данных покупателя —'
+				. ' за ними идите в order_get по конкретному заказу.'
+				. ' Названия статусов и их коды покажет order_statuses.',
+				[
+					'type' => 'object',
+					'properties' => [
+						'id'       => ['type' => 'integer', 'description' => 'Внутренний ID заказа'],
+						'account'  => ['type' => 'string', 'description' => 'Номер заказа, как его видит покупатель'],
+						'status'   => ['type' => 'string', 'description' => 'Код статуса, например N или F'],
+						'from'     => ['type' => 'string', 'description' => 'Создан не раньше, ДД.ММ.ГГГГ'],
+						'to'       => ['type' => 'string', 'description' => 'Создан не позже, ДД.ММ.ГГГГ (включительно)'],
+						'payed'    => ['type' => 'string', 'enum' => ['Y', 'N'], 'description' => 'Оплачен'],
+						'canceled' => ['type' => 'string', 'enum' => ['Y', 'N'], 'description' => 'Отменён'],
+						'user'     => ['type' => 'integer', 'description' => 'ID пользователя-покупателя'],
+						'limit'    => ['type' => 'integer', 'minimum' => 1, 'maximum' => Orders::LIMIT_MAX,
+							'description' => 'Сколько вернуть, по умолчанию ' . Orders::LIMIT_DEF],
+						'offset'   => ['type' => 'integer', 'minimum' => 0, 'description' => 'Сдвиг для листания'],
+					],
+				],
+				[Orders::class, 'search']
+			),
+			new Tool(
+				'order_get',
+				'Заказ целиком',
+				'Один заказ: поля, состав корзины с ценами и количеством, свойства заказа.'
+				. ' ВНИМАНИЕ: в свойствах — персональные данные покупателя (имя, телефон,'
+				. ' адрес доставки).',
+				[
+					'type' => 'object',
+					'properties' => [
+						'id'      => ['type' => 'integer', 'description' => 'Внутренний ID заказа'],
+						'account' => ['type' => 'string', 'description' => 'Либо номер заказа'],
+					],
+				],
+				[Orders::class, 'get']
+			),
+			new Tool(
+				'order_statuses',
+				'Статусы заказов',
+				'Коды статусов этого сайта и их названия. Нужен, чтобы задать status'
+				. ' в order_search: коды у каждого магазина свои.',
+				['type' => 'object', 'properties' => new \stdClass()],
+				[Orders::class, 'statuses']
+			),
+		];
 	}
 
 	/**

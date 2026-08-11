@@ -18,6 +18,7 @@ return [
 	'lib/Api.php',
 	'lib/D7.php',
 	'lib/Data.php',
+	'lib/Orders.php',
 	'lib/Tools.php',
 	'lib/Server.php',
 	'lib/Orm/TokenTable.php',

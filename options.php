@@ -57,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			Option::set($module_id, 'origins', trim((string)($_POST['origins'] ?? '')));
 			Option::set($module_id, 'log_days', max(0, (int)($_POST['log_days'] ?? 30)));
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
+			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
 			Option::set($module_id, 'engine', empty($_POST['engine']) ? 'legacy' : 'orm');
 			$msg = 'Настройки сохранены.';
 		} elseif ($act === 'issue') {
@@ -335,6 +336,20 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		основной раздел. У инфоблоков без <code>API_CODE</code> модуль откатывается
 		на него сам. В ответе видно, каким путём получены данные: поле
 		<code>engine</code>.
+	</td></tr>
+	<tr class="heading"><td colspan="2">Заказы</td></tr>
+	<tr>
+		<td>Разрешить читать заказы:</td>
+		<td><input type="checkbox" name="orders" value="Y"<?php
+			echo Option::get($module_id, 'orders', 'N') === 'Y' ? ' checked' : ''; ?>>
+			добавляет <code>order_search</code>, <code>order_get</code>,
+			<code>order_statuses</code></td>
+	</tr>
+	<tr><td colspan="2" style="color:#c60">
+		⚠️ В свойствах заказа лежат <b>персональные данные покупателей</b>: имя, телефон,
+		адрес доставки. Они уйдут в ответ инструмента <code>order_get</code>, а значит
+		за пределы сайта — модели и туда, где эта переписка хранится. Включайте, только
+		если понимаете, зачем это нужно, и помните про 152-ФЗ. По умолчанию выключено.
 	</td></tr>
 	<tr class="heading"><td colspan="2">Разведка API</td></tr>
 	<tr>
