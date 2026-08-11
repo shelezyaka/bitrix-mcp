@@ -39,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 		if ($act === 'save') {
 			Option::set($module_id, 'origins', trim((string)($_POST['origins'] ?? '')));
 			Option::set($module_id, 'log_days', max(0, (int)($_POST['log_days'] ?? 30)));
+			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			$msg = 'Настройки сохранены.';
 		} elseif ($act === 'issue') {
 			$r = \Itb\Mcp\Token::issue(
@@ -264,6 +265,27 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<td>Хранить журнал, дней (0 — вечно):</td>
 		<td><input type="text" name="log_days" size="6" value="<?php echo $logDays; ?>"></td>
 	</tr>
+	<tr class="heading"><td colspan="2">Разведка API</td></tr>
+	<tr>
+		<td>Разрешить читать устройство кода:</td>
+		<td><input type="checkbox" name="api" value="Y"<?php
+			echo Option::get($module_id, 'api', 'N') === 'Y' ? ' checked' : ''; ?>>
+			добавляет инструменты <code>api_modules</code>, <code>api_class</code>,
+			<code>api_entity</code>, <code>api_source</code>, <code>api_find_class</code></td>
+	</tr>
+	<tr><td colspan="2" style="color:#777">
+		Группа отвечает на вопрос «что за классы есть в этой установке и как они
+		устроены»: список модулей с версиями, сигнатуры методов, поля ORM-сущностей,
+		исходники классов и методов. Нужна, чтобы писать код под ваш сайт по фактам,
+		а не по памяти — версии Битрикса различаются, и метод из документации здесь
+		может отсутствовать.<br>
+		<b>Данных сайта эта группа не отдаёт</b>: ни товаров, ни заказов, ни настроек.
+		Выполнить что-либо через неё тоже нельзя — только чтение через рефлексию.
+		Путь к файлу берётся у рефлексии, поэтому произвольный файл не прочитать.<br>
+		⚠️ Исходники — это в том числе ваш собственный код из
+		<code>php_interface</code> и <code>local/modules</code>. Если там лежат ключи
+		или пароли прямо в коде, они станут видны. По умолчанию группа выключена.
+	</td></tr>
 	<?php if ($canWrite): ?>
 	<tr><td>&nbsp;</td><td><button type="submit" name="act" value="save">Сохранить</button></td></tr>
 	<?php endif; ?>

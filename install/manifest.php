@@ -15,6 +15,7 @@ return [
 	'lib/Audit.php',
 	'lib/Setup.php',
 	'lib/Expose.php',
+	'lib/Api.php',
 	'lib/Data.php',
 	'lib/Tools.php',
 	'lib/Server.php',
