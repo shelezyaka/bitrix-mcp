@@ -3,20 +3,11 @@ namespace Itb\Mcp;
 
 /**
  * Проверка аргументов инструмента по его JSON Schema.
- *
- * ⚠️ Это НЕ полная реализация JSON Schema и не должна ею стать. Здесь проверяется
- * ровно то, что мы сами объявляем в описаниях инструментов: тип, обязательность,
- * перечисление, границы чисел и длины строк, лишние поля. Полный валидатор — это
- * зависимость и своя поверхность ошибок ради возможностей, которыми мы не
- * пользуемся.
- *
- * ⚠️ Молчаливое приведение типов запрещено. Строка «10» вместо числа 10 — это
- * сигнал, что модель поняла схему иначе, чем мы её написали; проглотив его, мы
- * узнаем об этом на данных, а не на входе.
+ * Поддерживается только то, что мы сами используем в описаниях.
  */
 class Schema
 {
-	/** null — годится; строка — человеческое объяснение, что не так. */
+	/** null — годится, строка — что не так. */
 	public static function validate(array $args, array $schema): ?string
 	{
 		$props = isset($schema['properties']) && is_array($schema['properties'])
@@ -29,12 +20,10 @@ class Schema
 		}
 
 		foreach ($args as $name => $val) {
-			if (!isset($props[$name])) {
-				// ⚠️ Лишний аргумент — это ошибка, а не мусор, который можно отбросить.
-				// Чаще всего он означает опечатку в имени: молча проигнорировав его,
-				// мы выполним запрос БЕЗ фильтра, о котором просили.
-				return 'неизвестный аргумент «' . $name . '»';
-			}
+			// Лишний аргумент — обычно опечатка в имени. Проигнорировав его, мы
+			// выполнили бы запрос без фильтра, о котором просили.
+			if (!isset($props[$name])) { return 'неизвестный аргумент «' . $name . '»'; }
+
 			$bad = self::one($name, $val, $props[$name]);
 			if ($bad !== null) { return $bad; }
 		}
@@ -44,18 +33,19 @@ class Schema
 
 	private static function one(string $name, $val, array $rule): ?string
 	{
-		$type = (string)($rule['type'] ?? '');
-
-		switch ($type) {
+		switch ((string)($rule['type'] ?? '')) {
 			case 'string':
 				if (!is_string($val)) { return '«' . $name . '» должен быть строкой'; }
-				if (isset($rule['maxLength']) && mb_strlen($val) > (int)$rule['maxLength']) {
-					return '«' . $name . '» длиннее ' . (int)$rule['maxLength'] . ' символов';
+				if (isset($rule['maxLength'])) {
+					$len = function_exists('mb_strlen') ? mb_strlen($val) : strlen($val);
+					if ($len > (int)$rule['maxLength']) {
+						return '«' . $name . '» длиннее ' . (int)$rule['maxLength'] . ' символов';
+					}
 				}
 				break;
 
+			// is_int, а не is_numeric: «10» вместо 10 значит, что схему поняли иначе.
 			case 'integer':
-				// ⚠️ is_int, а не is_numeric: «10» это строка, и приехала она не просто так.
 				if (!is_int($val)) { return '«' . $name . '» должен быть целым числом'; }
 				break;
 
@@ -68,7 +58,7 @@ class Schema
 				break;
 
 			case 'array':
-				if (!is_array($val) || (!empty($val) && array_keys($val) !== range(0, count($val) - 1))) {
+				if (!is_array($val) || ($val !== [] && array_keys($val) !== range(0, count($val) - 1))) {
 					return '«' . $name . '» должен быть списком';
 				}
 				if (isset($rule['maxItems']) && count($val) > (int)$rule['maxItems']) {

@@ -2,33 +2,19 @@
 namespace Itb\Mcp;
 
 /**
- * Транспорт Streamable HTTP.
+ * Транспорт Streamable HTTP. Без зависимостей от Битрикса.
  *
- * ⚠️ Как и `Protocol`, ничего не знает ни о Битриксе, ни о суперглобальных
- * массивах: на входе метод, заголовки и тело, на выходе код, заголовки и тело.
- * Поэтому «405 на GET», «202 на уведомление» и «400 на чужую версию» проверяются
- * прогоном из консоли, а не запросами к боевому сайту.
- *
- * Что спецификация РАЗРЕШАЕТ не делать, и мы не делаем:
- *   — SSE. На запрос можно ответить обычным `application/json`;
- *   — поток серверных сообщений по GET. Разрешено ответить `405`;
- *   — сессии. `Mcp-Session-Id` — MAY, мы без состояния.
- *
- * Что спецификация ТРЕБУЕТ и что легко пропустить:
- *   — проверку заголовка `Origin` (защита от DNS rebinding);
- *   — `400` на неизвестный `MCP-Protocol-Version`;
- *   — при отсутствии этого заголовка считать версию `2025-03-26`;
- *   — `202` без тела в ответ на уведомление.
+ * Спецификация разрешает не делать SSE, поток по GET и сессии.
+ * Требует: проверку Origin, 400 на чужой MCP-Protocol-Version, 202 на уведомление.
  */
 class Transport
 {
-	/** Потолок тела запроса. Инструменты читают, им незачем принимать мегабайты. */
 	const MAX_BODY = 262144;
 
 	/**
-	 * @param callable $authorize fn(string $bearer): Registry — бросает AuthError
+	 * @param callable $authorize fn(string $bearer): Registry, бросает AuthError
 	 * @param callable $dispatch  fn(array $msg, Registry $reg): ?array
-	 * @param string[] $origins   разрешённые Origin; пустой список = браузерам нельзя
+	 * @param string[] $origins   разрешённые Origin; пусто — браузерам нельзя
 	 * @return array{status:int,headers:array,body:string}
 	 */
 	public static function respond(string $httpMethod, array $headers, string $rawBody,
@@ -36,24 +22,13 @@ class Transport
 	{
 		$h = [];
 		foreach ($headers as $k => $v) { $h[strtolower((string)$k)] = (string)$v; }
-		$httpMethod = strtoupper($httpMethod);
 
-		// ── Метод ───────────────────────────────────────────────────────────
-		if ($httpMethod !== 'POST') {
-			// GET и DELETE спецификация разрешает отклонять: поток серверных
-			// сообщений и завершение сессии нам не нужны. Отвечаем ровно так, как
-			// там написано, чтобы клиент не счёл эндпоинт сломанным.
+		if (strtoupper($httpMethod) !== 'POST') {
 			return self::plain(405, 'Только POST', ['Allow' => 'POST']);
 		}
 
-		// ── Origin ──────────────────────────────────────────────────────────
-		//
-		// ⚠️⚠️ Требование спецификации, и оно не формальность. Без него страница
-		// в браузере жертвы может ходить на этот эндпоинт от её имени (DNS
-		// rebinding). Отсутствие заголовка — это НЕ браузер (обычный MCP-клиент
-		// его не шлёт), такое пропускаем; чужой Origin отвергаем. CORS-заголовков
-		// не отдаём вовсе и preflight не отвечаем — тогда браузер и не дойдёт
-		// до запроса.
+		// Отсутствие Origin — не браузер, пропускаем. Чужой Origin отвергаем.
+		// CORS-заголовков не отдаём вовсе, поэтому браузер до запроса не дойдёт.
 		$origin = $h['origin'] ?? '';
 		if ($origin !== '' && !in_array($origin, $origins, true)) {
 			return self::plain(403, 'Origin не разрешён');
@@ -63,12 +38,10 @@ class Transport
 			return self::plain(413, 'Тело запроса слишком велико');
 		}
 
-		$ct = strtolower($h['content-type'] ?? '');
-		if (strpos($ct, 'application/json') === false) {
+		if (strpos(strtolower($h['content-type'] ?? ''), 'application/json') === false) {
 			return self::plain(415, 'Ожидается Content-Type: application/json');
 		}
 
-		// ── Токен ───────────────────────────────────────────────────────────
 		$bearer = '';
 		if (preg_match('~^\s*Bearer\s+(\S+)\s*$~i', $h['authorization'] ?? '', $m)) {
 			$bearer = $m[1];
@@ -79,37 +52,28 @@ class Transport
 			return self::plain(401, 'Токен не принят', ['WWW-Authenticate' => 'Bearer']);
 		}
 
-		// ── Версия протокола ────────────────────────────────────────────────
-		//
-		// ⚠️ Заголовка нет — это старый клиент, а не «согласен на что угодно»:
-		// спецификация велит считать версию 2025-03-26. Заголовок есть, но версия
-		// чужая — ровно 400, здесь выбора нет.
 		$ver = $h['mcp-protocol-version'] ?? '';
 		if ($ver === '') { $ver = Protocol::FALLBACK_VERSION; }
 		if (!in_array($ver, Protocol::VERSIONS, true)) {
 			return self::plain(400, 'Версия протокола не поддерживается: ' . $ver);
 		}
 
-		// ── Тело ────────────────────────────────────────────────────────────
 		$msg = json_decode($rawBody, true);
 		if (!is_array($msg)) {
 			return self::json(400, Protocol::err(null, Protocol::E_PARSE, 'Тело не разбирается как JSON'));
 		}
-		// ⚠️ Пачки (batch) в этой версии протокола запрещены: тело обязано быть
-		// ОДНИМ сообщением. Список — это не «несколько запросов», а ошибка.
-		if (array_keys($msg) === range(0, count($msg) - 1) && $msg !== []) {
+		// Пачки (batch) в этой версии протокола запрещены: тело — одно сообщение.
+		if ($msg !== [] && array_keys($msg) === range(0, count($msg) - 1)) {
 			return self::json(400, Protocol::err(null, Protocol::E_REQUEST,
 				'Тело должно быть одним сообщением, а не списком'));
 		}
 
 		$res = $dispatch($msg, $reg);
 
-		// ⚠️ null — это уведомление: 202 и ПУСТОЕ тело. Не «200 с null»: клиент
-		// ждёт отсутствия ответа и на лишний JSON реагирует как на нарушение.
 		if ($res === null) { return ['status' => 202, 'headers' => [], 'body' => '']; }
 
-		// ⚠️ Ошибка JSON-RPC едет в теле с кодом 200. Отдать её как HTTP 4xx —
-		// значит спрятать причину: клиент покажет «сервер недоступен» вместо текста.
+		// Ошибка JSON-RPC едет в теле с кодом 200: отданная как HTTP 4xx, она
+		// показалась бы клиенту недоступностью сервера, а не причиной.
 		return self::json(200, $res);
 	}
 

@@ -2,18 +2,8 @@
 namespace Itb\Mcp;
 
 /**
- * Стык с сайтом: собрать настоящий HTTP-запрос, отдать настоящий ответ.
- *
- * ⚠️ Здесь и только здесь модуль знает про суперглобальные массивы и Битрикс.
- * Логика протокола лежит в `Protocol` и `Transport` и проверяется тестом из
- * консоли (`tests/protocol.php`). Всё, что попадёт сюда, тестом уже не покрыто —
- * значит сюда попадает как можно меньше.
- *
- * ⚠️⚠️ Обработчиков событий модуль НЕ регистрирует. Запрос приходит на
- * собственную точку входа `/mcp/index.php`, поэтому на страницах магазина не
- * выполняется ни строки этого кода. Готовый модуль с гитхаба ловил запросы через
- * `OnProlog`, то есть жил на каждом хите витрины — ради того лишь, чтобы не
- * заводить отдельный файл.
+ * Стык с сайтом: собрать HTTP-запрос, отдать ответ.
+ * Единственное место, где модуль знает про суперглобальные массивы и Битрикс.
  */
 class Server
 {
@@ -21,9 +11,7 @@ class Server
 	{
 		Audit::start();
 
-		// ⚠️ Фатальная ошибка не проходит через наш код вовсе: ответ обрывается,
-		// и в журнале не остаётся ничего — то есть самый интересный случай виден
-		// хуже всех остальных. Завершающий обработчик дописывает строку и тогда.
+		// Фатальная ошибка не проходит через наш код — строку в журнал дописываем отсюда.
 		register_shutdown_function(static function () {
 			$e = error_get_last();
 			if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
@@ -41,13 +29,13 @@ class Server
 			self::origins()
 		);
 
-		// ⚠️ Буферы сбрасываем до заголовков: любая случайная строка, выведенная
-		// ядром до нас, превращает JSON в мусор, а причину прячет.
+		self::dropSession();
+
+		// Буферы сбрасываем до заголовков: случайный вывод ядра испортил бы JSON.
 		while (ob_get_level() > 0) { ob_end_clean(); }
 
 		http_response_code($r['status']);
 		foreach ($r['headers'] as $k => $v) { header($k . ': ' . $v); }
-		// Ответы MCP кэшировать нельзя: это данные, а не страница.
 		header('Cache-Control: no-store');
 		echo $r['body'];
 
@@ -55,11 +43,20 @@ class Server
 	}
 
 	/**
-	 * Обёртка над ядром протокола: то же самое плюс запись в журнал.
-	 *
-	 * ⚠️ Именно обёртка, а не правка `Protocol`: ядро обязано оставаться без
-	 * побочных действий, иначе его нельзя гонять тестом.
+	 * Сессия, заведённая ядром, здесь не нужна: авторизация идёт по токену.
+	 * Без этого каждый вызов оставлял бы после себя запись сессии.
 	 */
+	private static function dropSession(): void
+	{
+		try {
+			$s = \Bitrix\Main\Application::getInstance()->getSession();
+			if ($s && $s->isStarted()) { $s->destroy(); }
+		} catch (\Throwable $e) {
+			// Ядро старше 20.5 — SessionInterface там нет, и это не повод падать.
+		}
+	}
+
+	/** Обёртка над ядром протокола: то же самое плюс запись в журнал. */
 	public static function dispatch(array $msg, Registry $reg): ?array
 	{
 		$method = (string)($msg['method'] ?? '');
@@ -73,8 +70,6 @@ class Server
 
 		$res = Protocol::dispatch($msg, $reg);
 
-		// Ошибку протокола тоже видно в журнале: «инструмент звали, но не тот»
-		// снаружи неотличимо от «не звали вовсе».
 		if (isset($res['error']['message'])) {
 			Audit::note(['ERROR' => mb_substr((string)$res['error']['message'], 0, 255)]);
 		} elseif (!empty($res['result']['isError'])) {
@@ -85,17 +80,6 @@ class Server
 		return $res;
 	}
 
-	/**
-	 * Заголовки запроса в виде «имя => значение».
-	 *
-	 * ⚠️⚠️ `Authorization` собирается из ЧЕТЫРЁХ источников, и это не
-	 * перестраховка. Apache считает этот заголовок своим и в `$_SERVER` его
-	 * кладёт не всегда; под CGI/FastCGI он теряется без `CGIPassAuth On`, а при
-	 * переписывании адресов приезжает как `REDIRECT_HTTP_AUTHORIZATION`.
-	 * Симптом потери коварен: сервер отвечает 401, в журнале «токен не найден»,
-	 * и человек идёт перевыпускать верный токен — потому что до PHP он просто
-	 * не дошёл. Ошибка выглядит как чужая.
-	 */
 	private static function headers(): array
 	{
 		$out = [];
@@ -104,31 +88,25 @@ class Server
 				$out[str_replace('_', '-', substr($k, 5))] = (string)$v;
 			}
 		}
-
-		// ⚠️ Content-Type и Content-Length приходят БЕЗ префикса HTTP_ — давняя
-		// особенность CGI. Без этих двух строк проверка типа тела отвергала бы
-		// любой корректный запрос.
+		// Content-Type и Content-Length приходят без префикса HTTP_ (особенность CGI).
 		if (isset($_SERVER['CONTENT_TYPE']))   { $out['CONTENT-TYPE'] = (string)$_SERVER['CONTENT_TYPE']; }
 		if (isset($_SERVER['CONTENT_LENGTH'])) { $out['CONTENT-LENGTH'] = (string)$_SERVER['CONTENT_LENGTH']; }
 
-		if (($out['AUTHORIZATION'] ?? '') === '') {
-			$out['AUTHORIZATION'] = self::authHeader();
-		}
+		if (($out['AUTHORIZATION'] ?? '') === '') { $out['AUTHORIZATION'] = self::authHeader(); }
 
 		return $out;
 	}
 
-	/** Заголовок Authorization отовсюду, где его прячут разные связки веб-сервера. */
+	/**
+	 * Apache кладёт Authorization в $_SERVER не всегда: под CGI он теряется без
+	 * CGIPassAuth, при переписывании адресов приезжает как REDIRECT_HTTP_AUTHORIZATION.
+	 */
 	private static function authHeader(): string
 	{
 		if (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
 			return (string)$_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
 		}
 
-		// ⚠️ apache_request_headers() отдаёт заголовки так, как их прислал клиент,
-		// в обход преобразования в $_SERVER — единственный надёжный источник под
-		// mod_php. Имя ищем без учёта регистра: в HTTP регистр имени не значим,
-		// и разные связки пишут его по-разному.
 		foreach (['apache_request_headers', 'getallheaders'] as $fn) {
 			if (function_exists($fn)) {
 				foreach ((array)$fn() as $k => $v) {
@@ -140,13 +118,7 @@ class Server
 		return '';
 	}
 
-	/**
-	 * Разрешённые Origin.
-	 *
-	 * ⚠️ По умолчанию — пусто, то есть браузерам нельзя вовсе. Обычный MCP-клиент
-	 * заголовок Origin не шлёт и проверку проходит; заголовок появляется там, где
-	 * запрос делает браузер, — и вот его пускать некуда.
-	 */
+	/** Пусто — браузерам нельзя вовсе. Обычный MCP-клиент Origin не шлёт. */
 	private static function origins(): array
 	{
 		$raw = trim((string)\Bitrix\Main\Config\Option::get('itb.mcp', 'origins', ''));
