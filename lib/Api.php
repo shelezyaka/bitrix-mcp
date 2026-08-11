@@ -169,6 +169,13 @@ class Api
 		$query  = strtolower(trim((string)($a['query'] ?? '')));
 		if ($module === '') { throw new ToolError('Укажите module — искать по всему ядру слишком дорого.'); }
 
+		// Имя модуля идёт прямо в путь, поэтому проверяется по белому списку
+		// символов. Без этого «../..» уводит обход за пределы папки модулей и
+		// вообще за пределы сайта — то есть отдаёт перечень чужих файлов.
+		if (!self::validModule($module)) {
+			throw new ToolError('Недопустимое имя модуля: ' . $module);
+		}
+
 		$root = null;
 		foreach (['/local/modules/', '/bitrix/modules/'] as $base) {
 			$p = \Bitrix\Main\Application::getDocumentRoot() . $base . $module . '/lib';
@@ -198,11 +205,39 @@ class Api
 
 	// ── Внутреннее ──────────────────────────────────────────────────────────
 
+	/**
+	 * Имя класса из аргументов, проверенное по набору символов.
+	 *
+	 * Проверка нужна потому, что дальше зовётся class_exists(), а он запускает
+	 * ВСЕ автозагрузчики сайта — и наши, и чужие. Ядро Битрикса имя фильтрует
+	 * само, но полагаться на это нельзя: автозагрузчик может добавить кто угодно,
+	 * а построенный из имени путь — это подключение файла, то есть выполнение кода.
+	 */
 	private static function className(array $a): string
 	{
-		$name = trim((string)($a['class'] ?? ''));
+		$name = ltrim(trim((string)($a['class'] ?? '')), '\\');
 		if ($name === '') { throw new ToolError('Не указан класс'); }
-		return ltrim($name, '\\');
+
+		if (!self::validClass($name)) {
+			throw new ToolError('Недопустимое имя класса: ' . $name);
+		}
+
+		return $name;
+	}
+
+	/** Только буквы, цифры, подчёркивание и разделитель пространств имён. */
+	public static function validClass(string $name): bool
+	{
+		return (bool)preg_match('~^[A-Za-z0-9_]+(\\\\[A-Za-z0-9_]+)*$~', $name);
+	}
+
+	/**
+	 * Имя модуля идёт прямо в путь на диске, поэтому косые черты и «..»
+	 * недопустимы: иначе обход уходит за пределы папки модулей и сайта.
+	 */
+	public static function validModule(string $name): bool
+	{
+		return (bool)preg_match('~^[a-zA-Z0-9_.-]+$~', $name) && strpos($name, '..') === false;
 	}
 
 	private static function reflect(string $name): \ReflectionClass

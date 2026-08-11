@@ -159,6 +159,7 @@ Streamable HTTP, версии `2025-06-18` и `2025-03-26`. Ответ — об�
 php tests/protocol.php    # транспорт, рукопожатие, инструменты, JSON-RPC
 php tests/tokens.php      # выпуск, срок, отзыв, права токена
 php tests/expose.php      # разбор белого списка инфоблоков
+php tests/api.php         # проверка имён классов и модулей
 ```
 
 Тесты не требуют ни Битрикса, ни базы: `Protocol`, `Transport`, `Schema`,
