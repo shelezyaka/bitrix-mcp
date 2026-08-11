@@ -365,6 +365,13 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 <?php $tabs->BeginNextTab(); ?>
 	<tr><td colspan="2">
 		<table class="internal" style="width:100%">
+			<?php
+			// Номер токена ничего не подсказывает — рядом ставим название, под
+			// которым его выпускали. Удалённый токен остаётся номером: строка
+			// журнала должна пережить его удаление.
+			$titles = [];
+			foreach ($tokens as $t) { $titles[(int)$t['ID']] = (string)$t['TITLE']; }
+			?>
 			<tr class="heading">
 				<td>Когда</td><td>Токен</td><td>IP</td><td>Метод</td><td>Инструмент</td>
 				<td>Код</td><td>мс</td><td>Ответ</td><td>Ошибка</td>
@@ -372,10 +379,18 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			<?php if (!$log): ?>
 				<tr><td colspan="9" style="text-align:center;color:#777">Обращений ещё не было</td></tr>
 			<?php endif; ?>
-			<?php foreach ($log as $l): ?>
+			<?php foreach ($log as $l):
+				$ltid = (int)$l['TOKEN_ID']; ?>
 			<tr>
 				<td><?php echo htmlspecialcharsbx((string)$l['CREATED_AT']); ?></td>
-				<td><?php echo (int)$l['TOKEN_ID'] ?: '—'; ?></td>
+				<td><?php
+					if (!$ltid) { echo '<span style="color:#c0392b">не опознан</span>'; }
+					elseif (isset($titles[$ltid])) {
+						echo $ltid . ' · <b>' . htmlspecialcharsbx($titles[$ltid]) . '</b>';
+					} else {
+						echo $ltid . ' <span style="color:#777">(удалён)</span>';
+					}
+				?></td>
 				<td><?php echo htmlspecialcharsbx((string)$l['IP']); ?></td>
 				<td><?php echo htmlspecialcharsbx((string)$l['RPC_METHOD']); ?></td>
 				<td><?php echo htmlspecialcharsbx((string)$l['TOOL']); ?></td>
@@ -388,7 +403,11 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			<?php endforeach; ?>
 		</table>
 		<p style="color:#777">Пишется каждый запрос, включая отвергнутые: перебор токенов
-			и чужой <code>Origin</code> видны только в отказах.</p>
+			и чужой <code>Origin</code> видны только в отказах. «Не опознан» означает,
+			что токен не подошёл — тогда различить обращения можно лишь по IP.
+			Если разные машины показывают <b>один и тот же</b> токен, значит он у них
+			общий: выпустите каждой свой, иначе отозвать доступ одной, не задев
+			остальных, не получится.</p>
 	</td></tr>
 
 <?php $tabs->End(); ?>
