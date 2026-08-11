@@ -20,16 +20,25 @@ class Data
 	const LIMIT_DEF = 20;
 
 	/**
-	 * Поля элемента, которые отдаются всегда.
+	 * Поля элемента.
 	 *
 	 * ⚠️ Список ФИКСИРОВАННЫЙ и не настраивается. Это описание карточки, одинаковое
 	 * на любом сайте; всё, что специфично, лежит в свойствах и проходит через
 	 * белый список. Позволь мы выбирать поля — пришлось бы отвечать на вопрос,
 	 * какие из них безопасны, на каждом сайте заново.
+	 *
+	 * ⚠️⚠️ У списка и у карточки наборы РАЗНЫЕ. Тексты описания в выдачу поиска не
+	 * идут: на этом каталоге они короткие, но на контентном сайте одно описание
+	 * весит килобайты, и двадцать строк поиска превращаются в простыню. Кому нужен
+	 * текст — тот зовёт element_get по конкретному id.
 	 */
-	const FIELDS = ['ID', 'IBLOCK_ID', 'NAME', 'CODE', 'ACTIVE', 'SORT',
+	const FIELDS_FULL = ['ID', 'IBLOCK_ID', 'NAME', 'CODE', 'ACTIVE', 'SORT',
 		'DATE_CREATE', 'TIMESTAMP_X', 'IBLOCK_SECTION_ID', 'DETAIL_PAGE_URL',
 		'PREVIEW_TEXT', 'DETAIL_TEXT', 'PREVIEW_PICTURE', 'DETAIL_PICTURE'];
+
+	const FIELDS_LIST = ['ID', 'IBLOCK_ID', 'NAME', 'CODE', 'ACTIVE', 'SORT',
+		'DATE_CREATE', 'TIMESTAMP_X', 'IBLOCK_SECTION_ID', 'DETAIL_PAGE_URL',
+		'PREVIEW_PICTURE', 'DETAIL_PICTURE'];
 
 	/** Свойства инфоблока: код => человеческое имя. Кэш на запрос. */
 	public static function props(int $iblockId): array
@@ -133,25 +142,72 @@ class Data
 		$limit  = self::limit($a);
 		$offset = max(0, (int)($a['offset'] ?? 0));
 
+		// ⚠️⚠️ В выдачу поиска свойства НЕ идут, пока их не попросили поимённо.
+		// Замерено на живом каталоге: карточка без свойств — 398 байт, со всеми
+		// 138 — 17,6 КБ. Двадцать строк превращались в 750 КБ, то есть один поиск
+		// съедал весь контекст модели и вытеснял оттуда сам вопрос. Нужные
+		// свойства называются в `props`, остальное — element_get по конкретному id.
+		$want = self::wantedProps($a, $allowed);
+
 		$rs = \CIBlockElement::GetList(
 			['ID' => 'ASC'], $filter, false,
 			['nPageSize' => $limit, 'iNumPage' => (int)floor($offset / $limit) + 1],
-			self::FIELDS
+			self::FIELDS_LIST
 		);
 		$total = (int)$rs->SelectedRowsCount();
 
 		$items = [];
 		while ($el = $rs->GetNextElement()) {
-			$items[] = self::shape($el, $allowed);
+			// ⚠️ Когда свойства запрошены поимённо, пустые значения ОСТАЮТСЯ:
+			// спросили про артикул — надо видеть, что его нет, а не гадать,
+			// потерялся он или не заполнен.
+			$items[] = self::shape($el, $want ?? [], self::FIELDS_LIST, false);
 		}
 
-		return [
+		$out = [
 			'iblock' => $iblock,
 			'total'  => $total,
 			'shown'  => count($items),
 			'offset' => $offset,
 			'items'  => $items,
 		];
+
+		if ($want === null) {
+			$out['note'] = 'Свойства в выдачу поиска не включены — их ' . count($allowed)
+				. ', и ответ вышел бы в десятки раз больше. Назовите нужные в props'
+				. ' (например ["CML2_ARTICLE"]) либо возьмите карточку целиком через element_get.';
+		}
+		if ($total > $offset + count($items)) {
+			$out['more'] = 'Показаны не все: всего ' . $total . '. Следующая порция — offset '
+				. ($offset + count($items)) . '.';
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Какие свойства просили: null — не просили ни одного.
+	 *
+	 * ⚠️ Неизвестный код — ОТКАЗ со списком доступных, а не молчаливый пропуск.
+	 * Пропустив опечатку, мы вернём карточку без запрошенного свойства, и это
+	 * неотличимо от «свойство пустое».
+	 */
+	private static function wantedProps(array $a, array $allowed): ?array
+	{
+		$want = $a['props'] ?? null;
+		if (!is_array($want) || !$want) { return null; }
+
+		$out = [];
+		foreach ($want as $code) {
+			$code = strtoupper((string)$code);
+			if (!isset($allowed[$code])) {
+				throw new ToolError('Свойство «' . $code . '» не открыто для чтения. Доступны: '
+					. (implode(', ', array_keys($allowed)) ?: 'ни одного'));
+			}
+			$out[$code] = $allowed[$code];
+		}
+
+		return $out;
 	}
 
 	/** Один элемент со всеми разрешёнными свойствами. */
@@ -162,7 +218,7 @@ class Data
 
 		\Bitrix\Main\Loader::includeModule('iblock');
 
-		$rs = \CIBlockElement::GetList(['ID' => 'ASC'], ['ID' => $id], false, false, self::FIELDS);
+		$rs = \CIBlockElement::GetList(['ID' => 'ASC'], ['ID' => $id], false, false, self::FIELDS_FULL);
 		$el = $rs->GetNextElement();
 		if (!$el) { throw new ToolError('Элемент ' . $id . ' не найден'); }
 
@@ -173,7 +229,20 @@ class Data
 		// что открыть инфоблок целиком (id перебирается).
 		self::assertIblock($iblock);
 
-		return self::shape($el, Expose::filterProps($iblock, self::props($iblock)));
+		$allowed = Expose::filterProps($iblock, self::props($iblock));
+		$want    = self::wantedProps($a, $allowed);
+
+		// ⚠️ Пустые свойства из карточки выбрасываются: на живом товаре пусты 80 из
+		// 138, и они занимают треть ответа, не сообщая ничего. Сколько выброшено —
+		// написано рядом, иначе «свойств 58» читалось бы как «в инфоблоке их 58».
+		$row = self::shape($el, $want ?? $allowed, self::FIELDS_FULL, $want === null);
+		if ($want === null) {
+			$shown = count($row['PROPERTIES'] ?? []);
+			$row['PROPERTIES_NOTE'] = 'Показаны заполненные: ' . $shown . ' из ' . count($allowed)
+				. '. Пустые опущены.';
+		}
+
+		return $row;
 	}
 
 	/** Разделы инфоблока деревом. */
@@ -222,13 +291,19 @@ class Data
 		return min($n, self::LIMIT_MAX);
 	}
 
-	/** Элемент → плоская структура: поля, картинки путями, разрешённые свойства. */
-	private static function shape($el, array $allowed): array
+	/**
+	 * Элемент → плоская структура: поля, картинки путями, разрешённые свойства.
+	 *
+	 * @param array $allowed   какие свойства отдавать (код => имя)
+	 * @param array $fields    набор полей карточки
+	 * @param bool  $dropEmpty выбрасывать ли пустые свойства
+	 */
+	private static function shape($el, array $allowed, array $fields, bool $dropEmpty): array
 	{
 		$f = $el->GetFields();
 
 		$row = [];
-		foreach (self::FIELDS as $k) {
+		foreach ($fields as $k) {
 			if (!array_key_exists($k, $f)) { continue; }
 			if ($k === 'PREVIEW_PICTURE' || $k === 'DETAIL_PICTURE') {
 				// ⚠️ Отдаём ПУТЬ, а не id файла: число само по себе не значит
@@ -243,7 +318,10 @@ class Data
 			$props = [];
 			foreach ($el->GetProperties() as $code => $p) {
 				if (!isset($allowed[$code])) { continue; }
+
 				$v = $p['VALUE'];
+				if ($dropEmpty && ($v === null || $v === '' || $v === [] || $v === false)) { continue; }
+
 				// ⚠️ Множественное свойство приходит массивом, и `(string)` по нему
 				// даёт буквальное «Array». Те же грабли уже были в разделах Ozon
 				// и Маркета — здесь они бы просто выглядели как испорченные данные.
