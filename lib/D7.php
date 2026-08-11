@@ -85,7 +85,15 @@ class D7
 			$notes[] = 'Не нашлись в сущности и пропущены: ' . implode(', ', $kinds['unknown']);
 		}
 
-		$select = $spec['fields'];
+		// DETAIL_PAGE_URL полем сущности не является — он собирается из шаблона
+		// инфоблока после выборки. В select он даёт «Unknown field definition».
+		// Для сборки адреса нужны CODE, XML_ID и раздел, поэтому добираем их сами;
+		// в ответ уйдут только те поля, которые просили.
+		$want   = array_values(array_diff($spec['fields'], ['DETAIL_PAGE_URL']));
+		$select = $want;
+		foreach (['ID', 'CODE', 'XML_ID', 'IBLOCK_SECTION_ID'] as $f) {
+			if (!in_array($f, $select, true)) { $select[] = $f; }
+		}
 		foreach ($kinds['single'] as $code) { $select['P_' . $code] = $code . '.VALUE'; }
 
 		$filter = ['=IBLOCK_ID' => $iblock];
@@ -120,11 +128,15 @@ class D7
 		$total = (int)$rows->getCount();
 
 		$items = [];
+		$raw   = [];
 		while ($r = $rows->fetch()) {
 			// Фильтр по множественному свойству join-ит коллекцию и множит строки.
 			$id = (int)$r['ID'];
 			if (isset($items[$id])) { continue; }
-			$items[$id] = self::shape($r, $kinds['single'], $spec['dropEmpty']);
+			// Сырую строку держим отдельно: для сборки адреса нужны поля, которых
+			// в ответе может не быть.
+			$raw[$id]   = $r;
+			$items[$id] = self::shape($r, $kinds['single'], $spec['dropEmpty'], $want);
 		}
 		if ($multiFilter && $items) {
 			$notes[] = 'Отбор шёл по множественному свойству, повторы строк схлопнуты.';
@@ -134,7 +146,9 @@ class D7
 			self::fillMulti($cls, $iblock, array_keys($items), $kinds['multi'], $items, $spec['dropEmpty']);
 		}
 
-		self::fillUrls($iblock, $items);
+		if (in_array('DETAIL_PAGE_URL', $spec['fields'], true)) {
+			self::fillUrls($iblock, $items, $raw);
+		}
 
 		return ['total' => $total, 'items' => array_values($items), 'notes' => $notes];
 	}
@@ -189,25 +203,27 @@ class D7
 	 * В сущности такого поля нет — это шаблон инфоблока. Подставляет его само
 	 * ядро (CIBlock::ReplaceDetailUrl), поэтому свои замены не пишем.
 	 */
-	private static function fillUrls(int $iblock, array &$items): void
+	private static function fillUrls(int $iblock, array &$items, array $raw): void
 	{
 		if (!$items) { return; }
 
-		$ib = \CIBlock::GetArrayByID($iblock);
+		$ib  = \CIBlock::GetArrayByID($iblock);
 		$tpl = (string)($ib['DETAIL_PAGE_URL'] ?? '');
 		if ($tpl === '') { return; }
 
-		foreach ($items as &$row) {
+		foreach ($items as $id => &$row) {
+			$r = $raw[$id] ?? [];
+			$code = (string)($r['CODE'] ?? '');
 			$row['DETAIL_PAGE_URL'] = \CIBlock::ReplaceDetailUrl($tpl, [
-				'ID'                 => $row['ID'],
-				'CODE'               => $row['CODE'],
-				'~CODE'              => $row['CODE'],
-				'EXTERNAL_ID'        => $row['XML_ID'] ?? '',
+				'ID'                 => $id,
+				'CODE'               => $code,
+				'~CODE'              => $code,
+				'EXTERNAL_ID'        => (string)($r['XML_ID'] ?? ''),
 				'IBLOCK_ID'          => $iblock,
 				'IBLOCK_CODE'        => (string)($ib['CODE'] ?? ''),
 				'IBLOCK_TYPE_ID'     => (string)($ib['IBLOCK_TYPE_ID'] ?? ''),
 				'IBLOCK_EXTERNAL_ID' => (string)($ib['XML_ID'] ?? ''),
-				'IBLOCK_SECTION_ID'  => $row['IBLOCK_SECTION_ID'],
+				'IBLOCK_SECTION_ID'  => (int)($r['IBLOCK_SECTION_ID'] ?? 0),
 				'LANG_DIR'           => '',
 				'LID'                => '',
 			], false, false);
@@ -237,11 +253,13 @@ class D7
 	 * Форматы приходится приводить вручную: ORM возвращает даты объектами,
 	 * булево — типом bool, картинки — идентификаторами файлов.
 	 */
-	private static function shape(array $r, array $singleProps, bool $dropEmpty): array
+	private static function shape(array $r, array $singleProps, bool $dropEmpty, array $want): array
 	{
 		$row = [];
 		foreach ($r as $k => $v) {
-			if (strncmp($k, 'P_', 2) === 0) { continue; }
+			// Служебные добавки к select (XML_ID, CODE) наружу не отдаём, если их
+			// не просили: они нужны были только для сборки адреса.
+			if (strncmp($k, 'P_', 2) === 0 || !in_array($k, $want, true)) { continue; }
 
 			if ($v instanceof \Bitrix\Main\Type\DateTime || $v instanceof \Bitrix\Main\Type\Date) {
 				$row[$k] = $v->format('d.m.Y H:i:s');
