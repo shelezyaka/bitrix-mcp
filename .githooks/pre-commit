@@ -1,0 +1,45 @@
+#!/bin/sh
+# Поднимает патч-версию модуля, если в коммит попали его файлы.
+#
+# Работает в двух видах репозитория: модуль в корне (отдельный репозиторий) и
+# модуль внутри проекта сайта (local/modules/itb.mcp). Поэтому папка ищется, а
+# не задаётся жёстко.
+#
+# PHP намеренно не вызывается: в Git Bash под Windows его обычно нет в PATH, и
+# хук ронял бы любой коммит. Подъём патча делается средствами оболочки; для
+# minor/major есть bin/version.php.
+#
+# Включить в репозитории:  git config core.hooksPath .githooks
+
+set -e
+
+if [ -f "install/version.php" ]; then
+	DIR="."
+elif [ -f "local/modules/itb.mcp/install/version.php" ]; then
+	DIR="local/modules/itb.mcp"
+else
+	exit 0
+fi
+
+FILE="$DIR/install/version.php"
+
+# Сам version.php не считаем: иначе правка версии тянула бы следующую правку.
+CHANGED=$(git diff --cached --name-only --diff-filter=ACMR \
+	| grep "^${DIR#./}" | grep -v "install/version\.php" || true)
+
+[ -z "$CHANGED" ] && exit 0
+
+CUR=$(sed -n "s/.*'VERSION'[^']*'\([0-9][0-9.]*\)'.*/\1/p" "$FILE" | head -1)
+[ -z "$CUR" ] && { echo "pre-commit: не разобрал версию в $FILE"; exit 1; }
+
+MAJOR=${CUR%%.*}
+REST=${CUR#*.}
+MINOR=${REST%%.*}
+PATCH=${REST#*.}
+NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+
+printf '<?php\n$arModuleVersion = [\n\t'"'"'VERSION'"'"'      => '"'"'%s'"'"',\n\t'"'"'VERSION_DATE'"'"' => '"'"'%s'"'"',\n];\n' \
+	"$NEW" "$(date '+%Y-%m-%d %H:%M:%S')" > "$FILE"
+
+git add "$FILE"
+echo "версия модуля → $NEW"
