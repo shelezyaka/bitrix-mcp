@@ -20,14 +20,27 @@ class Server
 			}
 		});
 
-		$r = Transport::respond(
-			(string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
-			self::headers(),
-			(string)file_get_contents('php://input'),
-			[Auth::class, 'registryFor'],
-			[self::class, 'dispatch'],
-			self::origins()
-		);
+		try {
+			$r = Transport::respond(
+				(string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
+				self::headers(),
+				(string)file_get_contents('php://input'),
+				[Auth::class, 'registryFor'],
+				[self::class, 'dispatch'],
+				self::origins()
+			);
+		} catch (\Throwable $e) {
+			// Без этого ошибку показывает Битрикс: HTML со стек-трейсом и путями
+			// сервера вместо JSON. Клиент такой ответ не разберёт, а пути лишние.
+			Audit::note(['ERROR' => mb_substr(get_class($e) . ': ' . $e->getMessage(), 0, 255)]);
+			$r = [
+				'status'  => 500,
+				'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
+				'body'    => (string)json_encode(
+					Protocol::err(null, Protocol::E_INTERNAL, 'Внутренняя ошибка сервера'),
+					JSON_UNESCAPED_UNICODE),
+			];
+		}
 
 		self::dropSession();
 
@@ -70,14 +83,28 @@ class Server
 
 		$res = Protocol::dispatch($msg, $reg);
 
-		if (isset($res['error']['message'])) {
-			Audit::note(['ERROR' => mb_substr((string)$res['error']['message'], 0, 255)]);
-		} elseif (!empty($res['result']['isError'])) {
-			Audit::note(['ERROR' => mb_substr(
-				(string)($res['result']['content'][0]['text'] ?? 'isError'), 0, 255)]);
-		}
+		$why = self::failure($res);
+		if ($why !== null) { Audit::note(['ERROR' => mb_substr($why, 0, 255)]); }
 
 		return $res;
+	}
+
+	/**
+	 * Что записать в журнал как причину неудачи; null — всё прошло.
+	 *
+	 * result бывает и объектом: ping отвечает пустым «{}», и обращение к нему
+	 * как к массиву роняло весь запрос.
+	 */
+	public static function failure(?array $res): ?string
+	{
+		if ($res === null) { return null; }
+
+		if (isset($res['error']['message'])) { return (string)$res['error']['message']; }
+
+		$r = $res['result'] ?? null;
+		if (!is_array($r) || empty($r['isError'])) { return null; }
+
+		return (string)($r['content'][0]['text'] ?? 'isError');
 	}
 
 	private static function headers(): array

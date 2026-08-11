@@ -148,5 +148,21 @@ is_('id возвращается тот же', $r['json']['id'], 12);
 $r = rpc($H, ['jsonrpc' => '2.0', 'id' => 'строковый-id', 'method' => 'ping']);
 is_('строковый id тоже возвращается', $r['json']['id'], 'строковый-id');
 
+echo "\n=== Разбор ответа для журнала ===\n";
+// Server::failure — единственная часть стыка с Битриксом, которую можно проверить
+// отдельно. Именно здесь был фатал: ping отвечает объектом «{}», а разбирали его
+// как массив, и запрос падал целиком.
+require $lib . 'Server.php';
+is_('ping (result — объект) не роняет разбор',
+	\Itb\Mcp\Server::failure(Protocol::ok(1, new \stdClass())), null);
+is_('обычный удачный результат', \Itb\Mcp\Server::failure(Protocol::ok(1, ['tools' => []])), null);
+is_('уведомление', \Itb\Mcp\Server::failure(null), null);
+is_('ошибка протокола', \Itb\Mcp\Server::failure(Protocol::err(1, -32601, 'нет метода')), 'нет метода');
+is_('isError с текстом', \Itb\Mcp\Server::failure(
+	Protocol::ok(1, ['content' => [['type' => 'text', 'text' => 'не нашёл']], 'isError' => true])), 'не нашёл');
+is_('isError без текста', \Itb\Mcp\Server::failure(Protocol::ok(1, ['isError' => true])), 'isError');
+is_('isError=false — не ошибка', \Itb\Mcp\Server::failure(
+	Protocol::ok(1, ['content' => [], 'isError' => false])), null);
+
 echo "\n" . ($bad ? "ПРОВАЛОВ: $bad, удачных: $ok\n" : "Все $ok проверок прошли.\n");
 exit($bad ? 1 : 0);
