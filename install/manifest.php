@@ -22,6 +22,8 @@ return [
 	'lib/Token.php',
 	'lib/Audit.php',
 	'lib/Setup.php',
+	'lib/Expose.php',
+	'lib/Data.php',
 	'lib/Tools.php',
 	'lib/Server.php',
 	'lib/Orm/TokenTable.php',

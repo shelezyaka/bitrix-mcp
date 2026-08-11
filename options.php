@@ -55,6 +55,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			// ⚠️ Единственный момент за всю жизнь токена, когда его видно. Дальше
 			// в базе только sha256 — показать повторно нельзя ни нам, ни владельцу.
 			$freshToken = $r['token'];
+		} elseif ($act === 'expose') {
+			// ⚠️ Собираем список ЗАНОВО из отмеченных галочек, а не правим
+			// сохранённый. Снятая галочка обязана закрывать доступ; при правке
+			// «по месту» снятие пришлось бы обрабатывать отдельной веткой — и
+			// однажды забыть её, оставив открытым то, что человек закрыл.
+			$map = [];
+			foreach ((array)($_POST['ib'] ?? []) as $id) {
+				$id = (int)$id;
+				if ($id > 0) { $map[$id] = ['props' => (string)($_POST['props'][$id] ?? '')]; }
+			}
+			\Itb\Mcp\Expose::save($map);
+			$msg = $map
+				? ('Открыто инфоблоков: ' . count($map) . '. Клиенту нужно перечитать список'
+					. ' инструментов — обычно это переподключение.')
+				: 'Все инфоблоки закрыты. Доступен только site_info.';
 		} elseif ($act === 'revoke') {
 			\Itb\Mcp\Token::revoke((int)$arg);
 			$msg = 'Токен ' . (int)$arg . ' отозван. Запросы с ним получают 401.';
@@ -79,8 +94,19 @@ $live = array_filter($tokens, static function ($t) {
 	return \Itb\Mcp\Token::why($t, time()) === null;
 });
 
+// Все инфоблоки сайта, сгруппированные по типу — для вкладки «Данные».
+$exposed = \Itb\Mcp\Expose::all();
+$iblocks = [];
+if (\Bitrix\Main\Loader::includeModule('iblock')) {
+	$rs = CIBlock::GetList(['IBLOCK_TYPE' => 'ASC', 'NAME' => 'ASC'], ['CHECK_PERMISSIONS' => 'N']);
+	while ($ib = $rs->Fetch()) {
+		$iblocks[(string)$ib['IBLOCK_TYPE_ID']][] = $ib;
+	}
+}
+
 $tabs = new CAdminTabControl('itbMcpTabs', [
 	['DIV' => 'tokens',   'TAB' => 'Токены',    'TITLE' => 'Доступ к MCP-серверу'],
+	['DIV' => 'data',     'TAB' => 'Данные',    'TITLE' => 'Какие инфоблоки разрешено читать'],
 	['DIV' => 'settings', 'TAB' => 'Настройки', 'TITLE' => 'Origin и срок хранения журнала'],
 	['DIV' => 'log',      'TAB' => 'Журнал',    'TITLE' => 'Последние обращения'],
 ]);
@@ -186,6 +212,53 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<td><button type="submit" name="act" value="issue">Выпустить</button>
 			<span style="color:#777">значение покажется один раз</span></td>
 	</tr>
+	<?php endif; ?>
+
+<?php $tabs->BeginNextTab(); ?>
+	<tr><td colspan="2">
+		<p>Отмеченные инфоблоки модуль вправе <b>читать</b>. Что не отмечено — для него
+			не существует: инструменты откажутся работать с чужим идентификатором и
+			перечислят, что доступно.</p>
+		<p style="color:#777">Поле «свойства» — необязательное сужение. Пусто — отдаются все
+			свойства инфоблока. Через запятую — только перечисленные коды
+			(например <code>CML2_ARTICLE, METALL, VSTAVKI</code>).</p>
+		<p style="color:#c60">⚠️ Инфоблоки с персональными данными — заказы, обращения,
+			подписки — открывать не нужно: их читает не человек, а модель, и её ответы
+			уходят за пределы сайта.</p>
+		<table class="internal" style="width:100%">
+			<tr class="heading">
+				<td width="60">Читать</td><td width="60">ID</td><td>Инфоблок</td>
+				<td width="120">Код</td><td>Только эти свойства</td>
+			</tr>
+			<?php if (!$iblocks): ?>
+				<tr><td colspan="5" style="text-align:center;color:#777">Инфоблоков не найдено
+					(модуль iblock не подключён?)</td></tr>
+			<?php endif; ?>
+			<?php foreach ($iblocks as $type => $list): ?>
+				<tr><td colspan="5" style="background:#f2f4f7"><b>Тип: <?php
+					echo htmlspecialcharsbx((string)$type); ?></b></td></tr>
+				<?php foreach ($list as $ib):
+					$id = (int)$ib['ID'];
+					$on = array_key_exists($id, $exposed);
+					$pr = $on && $exposed[$id]['props'] !== null
+						? implode(', ', $exposed[$id]['props']) : ''; ?>
+				<tr<?php echo $on ? ' style="background:#eefaf0"' : ''; ?>>
+					<td style="text-align:center"><input type="checkbox" name="ib[]"
+						value="<?php echo $id; ?>"<?php echo $on ? ' checked' : ''; ?>></td>
+					<td><?php echo $id; ?></td>
+					<td><?php echo htmlspecialcharsbx((string)$ib['NAME']); ?></td>
+					<td><code><?php echo htmlspecialcharsbx((string)$ib['CODE']); ?></code></td>
+					<td><input type="text" name="props[<?php echo $id; ?>]" size="45"
+						value="<?php echo htmlspecialcharsbx($pr); ?>"
+						placeholder="пусто — все свойства"></td>
+				</tr>
+				<?php endforeach; ?>
+			<?php endforeach; ?>
+		</table>
+	</td></tr>
+	<?php if ($canWrite): ?>
+	<tr><td>&nbsp;</td><td><button type="submit" name="act" value="expose">Сохранить список</button>
+		<span style="color:#777">после изменения клиент должен перечитать инструменты</span></td></tr>
 	<?php endif; ?>
 
 <?php $tabs->BeginNextTab(); ?>
