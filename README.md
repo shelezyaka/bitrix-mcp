@@ -1,5 +1,7 @@
 # MCP-сервер для 1С-Битрикс (только чтение)
 
+[![Тесты](https://github.com/shelezyaka/bitrix-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/shelezyaka/bitrix-mcp/actions/workflows/tests.yml)
+
 Даёт языковой модели читать данные сайта по протоколу
 [MCP](https://modelcontextprotocol.io) — каталог, разделы, свойства товаров.
 **Записи в модуле нет**: не отключена настройкой, а отсутствует в коде.
