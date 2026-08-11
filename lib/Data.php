@@ -134,7 +134,7 @@ class Data
 			$code = strtoupper((string)$code);
 			if (!isset($allowed[$code]) && !isset($allowed[strtolower($code)])) {
 				throw new ToolError('Свойство «' . $code . '» не открыто для чтения. Доступны: '
-					. (implode(', ', array_keys($allowed)) ?: 'ни одного'));
+					. self::codeHint($allowed));
 			}
 			$filter['PROPERTY_' . $code] = is_array($val) ? array_map('strval', $val) : (string)$val;
 		}
@@ -202,7 +202,7 @@ class Data
 			$code = strtoupper((string)$code);
 			if (!isset($allowed[$code])) {
 				throw new ToolError('Свойство «' . $code . '» не открыто для чтения. Доступны: '
-					. (implode(', ', array_keys($allowed)) ?: 'ни одного'));
+					. self::codeHint($allowed));
 			}
 			$out[$code] = $allowed[$code];
 		}
@@ -254,7 +254,10 @@ class Data
 		\Bitrix\Main\Loader::includeModule('iblock');
 
 		$out = [];
-		$rs = \CIBlockSection::GetList(['LEFT_MARGIN' => 'ASC'], ['IBLOCK_ID' => $iblock], false,
+		// ⚠️ Третий аргумент — это `bIncCnt`, «считать элементы». С `false` поле
+		// ELEMENT_CNT просто не приходит, и число элементов в каждом разделе
+		// оказывалось пустым: в перечне полей оно есть, а в ответе его нет.
+		$rs = \CIBlockSection::GetList(['LEFT_MARGIN' => 'ASC'], ['IBLOCK_ID' => $iblock], true,
 			['ID', 'NAME', 'CODE', 'IBLOCK_SECTION_ID', 'DEPTH_LEVEL', 'ACTIVE', 'ELEMENT_CNT']);
 		while ($s = $rs->GetNext(true, false)) {
 			$out[] = [
@@ -282,6 +285,27 @@ class Data
 			? ('Инфоблок ' . $id . ' не открыт для чтения. Открыты: '
 				. (implode(', ', $open) ?: 'ни одного — настройте белый список в админке'))
 			: ('Не указан инфоблок. Открыты: ' . (implode(', ', $open) ?: 'ни одного')));
+	}
+
+	/**
+	 * Перечень доступных кодов для текста отказа.
+	 *
+	 * ⚠️ С обрезкой: на этом каталоге открыто 138 свойств, и полный список
+	 * занимал полтора килобайта — то есть сообщение об одной опечатке весило
+	 * больше, чем ответ на сам запрос. Первых двух десятков хватает, чтобы
+	 * понять, как выглядят коды; полный перечень и так есть в описании
+	 * инструмента и в site_info.
+	 */
+	private static function codeHint(array $allowed): string
+	{
+		if (!$allowed) { return 'ни одного'; }
+
+		$codes = array_keys($allowed);
+		$head  = array_slice($codes, 0, 20);
+		$rest  = count($codes) - count($head);
+
+		return implode(', ', $head)
+			. ($rest > 0 ? ' и ещё ' . $rest . ' (полный список — в site_info)' : '');
 	}
 
 	public static function limit(array $a): int
