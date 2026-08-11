@@ -1,0 +1,62 @@
+# Проверка модуля. Composer здесь не нужен: зависимостей у модуля нет,
+# а тесты написаны на голом PHP и возвращают код возврата.
+#
+# Матрица версий проверяет то, что README обещает: PHP 8.0 и новее. Разработка
+# идёт на 8.5, и без этой матрицы «поддерживается 8.0» осталось бы догадкой.
+name: Тесты
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '8.0', '8.1', '8.2', '8.3', '8.4' ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Поставить PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      # Линт проходит по ВСЕМ файлам, включая те, что требуют Битрикса: они не
+      # исполняются, а синтаксис у них проверить надо.
+      - name: Синтаксис
+        run: find . -path ./.git -prune -o -name '*.php' -print0 | xargs -0 -n1 -r php -l
+
+      - name: Ядро протокола
+        run: php tests/protocol.php
+
+      - name: Токены и права
+        run: php tests/tokens.php
+
+      - name: Белый список инфоблоков
+        run: php tests/expose.php
+
+      # Файл, забытый в манифесте, ломает установку у того, кто ставит модуль
+      # архивом: CheckFiles о нём не знает и пропускает недостачу.
+      - name: Манифест покрывает lib/
+        run: |
+          php -r '
+            $need = require "install/manifest.php";
+            $lost = array_values(array_filter($need, fn($f) => !file_exists($f)));
+            $disk = array_merge(glob("lib/*.php"), glob("lib/Orm/*.php"));
+            $miss = array_values(array_diff($disk, $need));
+            if ($lost) { fwrite(STDERR, "нет файлов из манифеста: " . implode(", ", $lost) . "\n"); }
+            if ($miss) { fwrite(STDERR, "не перечислены в манифесте: " . implode(", ", $miss) . "\n"); }
+            exit($lost || $miss ? 1 : 0);
+          '
