@@ -85,7 +85,17 @@ class Server
 		return $res;
 	}
 
-	/** Заголовки запроса в виде «имя => значение». */
+	/**
+	 * Заголовки запроса в виде «имя => значение».
+	 *
+	 * ⚠️⚠️ `Authorization` собирается из ЧЕТЫРЁХ источников, и это не
+	 * перестраховка. Apache считает этот заголовок своим и в `$_SERVER` его
+	 * кладёт не всегда; под CGI/FastCGI он теряется без `CGIPassAuth On`, а при
+	 * переписывании адресов приезжает как `REDIRECT_HTTP_AUTHORIZATION`.
+	 * Симптом потери коварен: сервер отвечает 401, в журнале «токен не найден»,
+	 * и человек идёт перевыпускать верный токен — потому что до PHP он просто
+	 * не дошёл. Ошибка выглядит как чужая.
+	 */
 	private static function headers(): array
 	{
 		$out = [];
@@ -94,12 +104,40 @@ class Server
 				$out[str_replace('_', '-', substr($k, 5))] = (string)$v;
 			}
 		}
-		// ⚠️ Content-Type и Content-Length приходят БЕЗ префикса HTTP_ — это
-		// давняя особенность CGI, и без этих двух строк проверка типа тела
-		// отвергала бы любой корректный запрос.
+
+		// ⚠️ Content-Type и Content-Length приходят БЕЗ префикса HTTP_ — давняя
+		// особенность CGI. Без этих двух строк проверка типа тела отвергала бы
+		// любой корректный запрос.
 		if (isset($_SERVER['CONTENT_TYPE']))   { $out['CONTENT-TYPE'] = (string)$_SERVER['CONTENT_TYPE']; }
 		if (isset($_SERVER['CONTENT_LENGTH'])) { $out['CONTENT-LENGTH'] = (string)$_SERVER['CONTENT_LENGTH']; }
+
+		if (($out['AUTHORIZATION'] ?? '') === '') {
+			$out['AUTHORIZATION'] = self::authHeader();
+		}
+
 		return $out;
+	}
+
+	/** Заголовок Authorization отовсюду, где его прячут разные связки веб-сервера. */
+	private static function authHeader(): string
+	{
+		if (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+			return (string)$_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+		}
+
+		// ⚠️ apache_request_headers() отдаёт заголовки так, как их прислал клиент,
+		// в обход преобразования в $_SERVER — единственный надёжный источник под
+		// mod_php. Имя ищем без учёта регистра: в HTTP регистр имени не значим,
+		// и разные связки пишут его по-разному.
+		foreach (['apache_request_headers', 'getallheaders'] as $fn) {
+			if (function_exists($fn)) {
+				foreach ((array)$fn() as $k => $v) {
+					if (strcasecmp((string)$k, 'Authorization') === 0) { return (string)$v; }
+				}
+			}
+		}
+
+		return '';
 	}
 
 	/**
