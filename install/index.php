@@ -144,20 +144,31 @@ class itb_mcp extends CModule
 		return true;
 	}
 
-	/** Существующую точку входа не перезаписываем: она может приезжать через git. */
+	/**
+	 * Точка входа и страница диагностики в корне сайта.
+	 * Существующие файлы не перезаписываем: они могут приезжать через git.
+	 */
 	public function InstallFiles()
 	{
-		$dir  = $_SERVER['DOCUMENT_ROOT'] . '/mcp';
-		$file = $dir . '/index.php';
+		$dir = $_SERVER['DOCUMENT_ROOT'] . '/mcp';
 		if (!is_dir($dir)) { mkdir($dir, BX_DIR_PERMISSIONS, true); }
-		if (!file_exists($file)) { copy(__DIR__ . '/entry/index.php', $file); }
+
+		foreach (['index.php', 'check.php'] as $name) {
+			if (!file_exists($dir . '/' . $name)) {
+				copy(__DIR__ . '/entry/' . $name, $dir . '/' . $name);
+			}
+		}
 		return true;
 	}
 
 	public function UnInstallFiles()
 	{
-		$file = $_SERVER['DOCUMENT_ROOT'] . '/mcp/index.php';
-		if (file_exists($file)) { unlink($file); }
+		$dir = $_SERVER['DOCUMENT_ROOT'] . '/mcp';
+		foreach (['index.php', 'check.php'] as $name) {
+			if (file_exists($dir . '/' . $name)) { unlink($dir . '/' . $name); }
+		}
+		// Пустую папку убираем за собой; если там осталось чужое — не трогаем.
+		if (is_dir($dir) && !glob($dir . '/*')) { @rmdir($dir); }
 		return true;
 	}
 }
