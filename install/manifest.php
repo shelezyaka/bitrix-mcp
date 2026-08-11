@@ -16,6 +16,7 @@ return [
 	'lib/Setup.php',
 	'lib/Expose.php',
 	'lib/Api.php',
+	'lib/D7.php',
 	'lib/Data.php',
 	'lib/Tools.php',
 	'lib/Server.php',

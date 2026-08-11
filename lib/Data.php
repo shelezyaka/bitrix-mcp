@@ -86,16 +86,9 @@ class Data
 			$filter['ID'] = array_map('intval', array_slice($a['ids'], 0, self::LIMIT_MAX));
 		}
 
-		// Фильтровать можно только по открытому свойству: фильтр отвечает «есть/нет»,
-		// и этого хватает, чтобы перебором вытащить закрытое значение.
 		$allowed = Expose::filterProps($iblock, self::props($iblock));
-		foreach ((array)($a['property'] ?? []) as $code => $val) {
-			$code = strtoupper((string)$code);
-			if (!isset($allowed[$code]) && !isset($allowed[strtolower($code)])) {
-				throw new ToolError('Свойство «' . $code . '» не открыто для чтения. Доступны: '
-					. self::codeHint($allowed));
-			}
-			$filter['PROPERTY_' . $code] = is_array($val) ? array_map('strval', $val) : (string)$val;
+		foreach (self::propertyFilter($a, $allowed) as $code => $val) {
+			$filter['PROPERTY_' . $code] = $val;
 		}
 
 		$limit  = self::limit($a);
@@ -104,6 +97,40 @@ class Data
 		// Свойства в выдачу не идут, пока не названы: карточка без них 398 байт,
 		// со всеми 138 — 17,6 КБ, то есть двадцать строк дали бы 750 КБ.
 		$want = self::wantedProps($a, $allowed);
+
+		// Основной путь — ORM: свойства приходят вместе с элементами. Старый API
+		// остаётся для инфоблоков без API_CODE, где сущность не собирается.
+		if (D7::entityClass($iblock) !== null) {
+			$spec = [
+				'iblock'   => $iblock,
+				'active'   => $active,
+				'name'     => (string)($a['name'] ?? ''),
+				'code'     => (string)($a['code'] ?? ''),
+				'ids'      => isset($filter['ID']) ? (array)$filter['ID'] : [],
+				'section'  => (int)($a['section'] ?? 0),
+				'property' => self::propertyFilter($a, $allowed),
+				'props'    => $want === null ? [] : array_keys($want),
+				'names'    => $allowed,
+				'fields'   => self::FIELDS_LIST,
+				'limit'    => $limit,
+				'offset'   => $offset,
+				'dropEmpty' => false,
+			];
+			$r = D7::search($spec);
+
+			$out = ['iblock' => $iblock, 'total' => $r['total'], 'shown' => count($r['items']),
+				'offset' => $offset, 'items' => $r['items'], 'engine' => 'orm'];
+			foreach ($r['notes'] as $i => $n) { $out['note' . ($i ?: '')] = $n; }
+			if ($want === null) {
+				$out['note'] = 'Свойства в выдачу поиска не включены — их ' . count($allowed)
+					. '. Назовите нужные в props либо возьмите карточку целиком через element_get.';
+			}
+			if ($r['total'] > $offset + count($r['items'])) {
+				$out['more'] = 'Показаны не все: всего ' . $r['total'] . '. Следующая порция — offset '
+					. ($offset + count($r['items'])) . '.';
+			}
+			return $out;
+		}
 
 		$rs = \CIBlockElement::GetList(
 			['ID' => 'ASC'], $filter, false,
@@ -135,6 +162,26 @@ class Data
 				. ($offset + count($items)) . '.';
 		}
 
+		return $out;
+	}
+
+	/**
+	 * Фильтр по свойствам, проверенный по белому списку.
+	 *
+	 * Фильтровать можно только по открытому свойству: фильтр отвечает «есть/нет»,
+	 * и этого хватает, чтобы перебором вытащить закрытое значение.
+	 */
+	private static function propertyFilter(array $a, array $allowed): array
+	{
+		$out = [];
+		foreach ((array)($a['property'] ?? []) as $code => $val) {
+			$code = strtoupper((string)$code);
+			if (!isset($allowed[$code])) {
+				throw new ToolError('Свойство «' . $code . '» не открыто для чтения. Доступны: '
+					. self::codeHint($allowed));
+			}
+			$out[$code] = is_array($val) ? array_map('strval', $val) : (string)$val;
+		}
 		return $out;
 	}
 
@@ -175,6 +222,23 @@ class Data
 
 		$allowed = Expose::filterProps($iblock, self::props($iblock));
 		$want    = self::wantedProps($a, $allowed);
+
+		if (D7::entityClass($iblock) !== null) {
+			$row = D7::element([
+				'iblock' => $iblock, 'id' => $id,
+				'props'  => array_keys($want ?? $allowed),
+				'names'  => $allowed,
+				'fields' => self::FIELDS_FULL,
+				'dropEmpty' => $want === null,
+			]);
+			if ($row === null) { throw new ToolError('Элемент ' . $id . ' не найден'); }
+			$row['engine'] = 'orm';
+			if ($want === null) {
+				$row['PROPERTIES_NOTE'] = 'Показаны заполненные: ' . count($row['PROPERTIES'] ?? [])
+					. ' из ' . count($allowed) . '. Пустые опущены.';
+			}
+			return $row;
+		}
 
 		$row = self::shape($el, $want ?? $allowed, self::FIELDS_FULL, $want === null);
 		if ($want === null) {
