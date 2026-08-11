@@ -9,8 +9,20 @@ namespace Itb\Mcp;
  */
 class Api
 {
-	/** Куда разрешено заглядывать. Всё остальное — не наше дело. */
-	const ROOTS = ['/bitrix/modules/', '/local/modules/', '/bitrix/php_interface/', '/local/php_interface/'];
+	/**
+	 * Разрешено читать любой файл в пределах сайта.
+	 *
+	 * Ограничение не в списке папок, а в способе: путь всегда даёт рефлексия по
+	 * существующему классу. Произвольный путь подставить нельзя, а файл без
+	 * класса — .env, конфиги, выгрузки — так не прочитать вовсе.
+	 */
+	private static function allowedPath(string $file): bool
+	{
+		$root = str_replace('\\', '/', (string)\Bitrix\Main\Application::getDocumentRoot());
+		$file = str_replace('\\', '/', $file);
+
+		return $root !== '' && strpos($file, rtrim($root, '/') . '/') === 0;
+	}
 
 	/** Потолок отдаваемого куска исходника, строк. */
 	const SOURCE_MAX = 400;
@@ -124,7 +136,7 @@ class Api
 		}
 
 		if ($file === '' || !self::allowedPath($file)) {
-			throw new ToolError('Исходник недоступен: файл вне папок модулей.');
+			throw new ToolError('Исходник недоступен: файл вне сайта.');
 		}
 
 		$lines = @file($file);
@@ -229,15 +241,6 @@ class Api
 			if ($line !== '' && strpos($line, '@') !== 0) { return $line; }
 		}
 		return null;
-	}
-
-	private static function allowedPath(string $file): bool
-	{
-		$file = str_replace('\\', '/', $file);
-		foreach (self::ROOTS as $r) {
-			if (strpos($file, $r) !== false) { return true; }
-		}
-		return false;
 	}
 
 	private static function relative(string $file): string
