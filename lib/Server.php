@@ -63,7 +63,13 @@ class Server
 	{
 		try {
 			$s = \Bitrix\Main\Application::getInstance()->getSession();
-			if ($s && $s->isStarted()) { $s->destroy(); }
+			if (!$s || !$s->isStarted()) { return; }
+
+			$s->destroy();
+			// Cookie ядро ставит в прологе, задолго до нас, поэтому заголовок
+			// снимаем отдельно: сессии больше нет и хранить клиенту нечего.
+			// Отсутствие Set-Cookie в ответе заодно показывает, что всё сработало.
+			header_remove('Set-Cookie');
 		} catch (\Throwable $e) {
 			// Ядро старше 20.5 — SessionInterface там нет, и это не повод падать.
 		}
