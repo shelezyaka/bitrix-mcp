@@ -22,6 +22,12 @@ class D7
 	 */
 	public static function entityClass(int $iblock): ?string
 	{
+		// Путь через ORM пока переключается настройкой и по умолчанию выключен:
+		// он отдаёт списочные свойства идентификаторами вместо текста, не собирает
+		// адрес детальной и упирается в предел MySQL на 61 таблицу в соединении,
+		// когда свойств много. Пока это не закрыто, боевой путь — старый API.
+		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'engine', 'legacy') !== 'orm') { return null; }
+
 		static $cache = [];
 		if (array_key_exists($iblock, $cache)) { return $cache[$iblock]; }
 
