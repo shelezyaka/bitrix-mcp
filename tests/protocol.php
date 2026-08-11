@@ -148,6 +148,37 @@ is_('id возвращается тот же', $r['json']['id'], 12);
 $r = rpc($H, ['jsonrpc' => '2.0', 'id' => 'строковый-id', 'method' => 'ping']);
 is_('строковый id тоже возвращается', $r['json']['id'], 'строковый-id');
 
+echo "\n=== Ограничение частоты ===\n";
+// Ограничитель обязан срабатывать ДО разбора токена: иначе перебор токенов
+// бесплатен для нападающего и дорог для базы.
+$seen = [];
+$callT = function (array $h, $body, callable $throttle, string $method = 'POST') use (&$seen) {
+	global $authorize, $dispatch, $ORIGINS;
+	$auth = function (string $t) use ($authorize, &$seen) { $seen[] = 'auth'; return $authorize($t); };
+	$raw = is_string($body) ? $body : json_encode($body);
+	return Transport::respond($method, $h, $raw, $auth, $dispatch, $ORIGINS, $throttle);
+};
+$never = function () { return null; };
+$always = function () { return 42; };
+
+$seen = [];
+$r = $callT($H, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'], $always);
+is_('превышение → 429', $r['status'], 429);
+is_('429 несёт Retry-After', $r['headers']['Retry-After'], '42');
+is_('токен при отказе НЕ разбирался', $seen, []);
+
+$seen = [];
+$r = $callT($H, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'], $never);
+is_('в пределах нормы — обычный ответ', $r['status'], 200);
+is_('и токен разобран', $seen, ['auth']);
+
+is_('без ограничителя всё как было',
+	call($H, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'])['status'], 200);
+// Отказ по методу и по Origin дешевле счётчика, поэтому стоит раньше него.
+is_('GET отвергается до счётчика', $callT($H, '', $always, 'GET')['status'], 405);
+is_('чужой Origin — до счётчика',
+	$callT($H + ['Origin' => 'https://evil.example'], [], $always)['status'], 403);
+
 echo "\n=== Разбор ответа для журнала ===\n";
 // Server::failure — единственная часть стыка с Битриксом, которую можно проверить
 // отдельно. Именно здесь был фатал: ping отвечает объектом «{}», а разбирали его

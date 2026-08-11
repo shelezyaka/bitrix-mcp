@@ -12,13 +12,15 @@ class Transport
 	const MAX_BODY = 262144;
 
 	/**
-	 * @param callable $authorize fn(string $bearer): Registry, бросает AuthError
-	 * @param callable $dispatch  fn(array $msg, Registry $reg): ?array
-	 * @param string[] $origins   разрешённые Origin; пусто — браузерам нельзя
+	 * @param callable      $authorize fn(string $bearer): Registry, бросает AuthError
+	 * @param callable      $dispatch  fn(array $msg, Registry $reg): ?array
+	 * @param string[]      $origins   разрешённые Origin; пусто — браузерам нельзя
+	 * @param callable|null $throttle  fn(): ?int — сколько секунд ждать, либо null
 	 * @return array{status:int,headers:array,body:string}
 	 */
 	public static function respond(string $httpMethod, array $headers, string $rawBody,
-		callable $authorize, callable $dispatch, array $origins = []): array
+		callable $authorize, callable $dispatch, array $origins = [],
+		?callable $throttle = null): array
 	{
 		$h = [];
 		foreach ($headers as $k => $v) { $h[strtolower((string)$k)] = (string)$v; }
@@ -36,6 +38,16 @@ class Transport
 
 		if (strlen($rawBody) > self::MAX_BODY) {
 			return self::plain(413, 'Тело запроса слишком велико');
+		}
+
+		// Ограничитель стоит РАНЬШЕ разбора токена: иначе перебор токенов был бы
+		// бесплатен для нападающего и дорог для базы.
+		if ($throttle !== null) {
+			$wait = $throttle();
+			if ($wait !== null) {
+				return self::plain(429, 'Слишком часто, подождите ' . (int)$wait . ' с',
+					['Retry-After' => (string)(int)$wait]);
+			}
 		}
 
 		if (strpos(strtolower($h['content-type'] ?? ''), 'application/json') === false) {

@@ -56,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 		if ($act === 'save') {
 			Option::set($module_id, 'origins', trim((string)($_POST['origins'] ?? '')));
 			Option::set($module_id, 'log_days', max(0, (int)($_POST['log_days'] ?? 30)));
+			Option::set($module_id, 'rate_limit', max(0, (int)($_POST['rate_limit'] ?? 120)));
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
 			Option::set($module_id, 'engine', empty($_POST['engine']) ? 'legacy' : 'orm');
@@ -322,6 +323,19 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<td>Хранить журнал, дней (0 — вечно):</td>
 		<td><input type="text" name="log_days" size="6" value="<?php echo $logDays; ?>"></td>
 	</tr>
+	<tr>
+		<td>Запросов с одного IP в минуту (0 — без ограничения):</td>
+		<td><input type="text" name="rate_limit" size="6" value="<?php
+			echo (int)Option::get($module_id, 'rate_limit', 120); ?>"></td>
+	</tr>
+	<tr><td colspan="2" style="color:#777">
+		Сверх нормы отвечаем <code>429</code> с заголовком <code>Retry-After</code>,
+		не доходя ни до токена, ни до базы каталога. В журнал пишется только первое
+		превышение в минуту — иначе запись о наплыве обошлась бы дороже самого наплыва.<br>
+		⚠️ Настоящий DDoS этим не остановить: веб-сервер и загрузка ядра Битрикса
+		происходят <b>до</b> кода модуля. От потока запросов защищает nginx или Apache
+		перед сайтом; здесь мы лишь не даём наплыву дёргать базу и инструменты.
+	</td></tr>
 	<tr class="heading"><td colspan="2">Чтение каталога</td></tr>
 	<tr>
 		<td>Читать через ORM (D7):</td>

@@ -110,11 +110,13 @@ class itb_mcp extends CModule
 		// и при неудаче уходит в bitrix/modules, где ничего нет.
 		require_once __DIR__ . '/../lib/Orm/TokenTable.php';
 		require_once __DIR__ . '/../lib/Orm/LogTable.php';
+		require_once __DIR__ . '/../lib/Orm/RateTable.php';
 		require_once __DIR__ . '/../lib/Setup.php';
 
 		$db = \Bitrix\Main\Application::getConnection();
 
-		foreach ([\Itb\Mcp\Orm\TokenTable::class, \Itb\Mcp\Orm\LogTable::class] as $cls) {
+		foreach ([\Itb\Mcp\Orm\TokenTable::class, \Itb\Mcp\Orm\LogTable::class,
+			\Itb\Mcp\Orm\RateTable::class] as $cls) {
 			if (!$db->isTableExists($cls::getTableName())) {
 				$cls::getEntity()->createDbTable();
 			}
@@ -138,7 +140,7 @@ class itb_mcp extends CModule
 	public function UnInstallDB()
 	{
 		$db = \Bitrix\Main\Application::getConnection();
-		foreach (['itb_mcp_log', 'itb_mcp_token'] as $t) {
+		foreach (['itb_mcp_log', 'itb_mcp_token', 'itb_mcp_rate'] as $t) {
 			if ($db->isTableExists($t)) { $db->dropTable($t); }
 		}
 		return true;

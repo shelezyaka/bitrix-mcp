@@ -11,6 +11,7 @@
 	'Itb\\Mcp\\Auth'      => 'lib/Auth.php',
 	'Itb\\Mcp\\Token'     => 'lib/Token.php',
 	'Itb\\Mcp\\Audit'     => 'lib/Audit.php',
+	'Itb\\Mcp\\Rate'      => 'lib/Rate.php',
 	'Itb\\Mcp\\Setup'     => 'lib/Setup.php',
 	'Itb\\Mcp\\Expose'    => 'lib/Expose.php',
 	'Itb\\Mcp\\Api'       => 'lib/Api.php',
@@ -22,4 +23,5 @@
 
 	'Itb\\Mcp\\Orm\\TokenTable' => 'lib/Orm/TokenTable.php',
 	'Itb\\Mcp\\Orm\\LogTable'   => 'lib/Orm/LogTable.php',
+	'Itb\\Mcp\\Orm\\RateTable'  => 'lib/Orm/RateTable.php',
 ]);

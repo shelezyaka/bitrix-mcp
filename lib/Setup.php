@@ -8,7 +8,7 @@ namespace Itb\Mcp;
 class Setup
 {
 	/** Поднимать при каждом изменении структуры таблиц. */
-	const SCHEMA_VERSION = 3;
+	const SCHEMA_VERSION = 4;
 
 	const OPT = 'schema_version';
 
@@ -47,6 +47,16 @@ class Setup
 				}
 			} catch (\Throwable $e) {
 				$done[] = 'itb_mcp_token.IBLOCKS — не удалось: ' . $e->getMessage();
+			}
+		}
+
+		// Версия 4: счётчик обращений по IP.
+		if ($have < 4 && !$db->isTableExists('itb_mcp_rate')) {
+			try {
+				\Itb\Mcp\Orm\RateTable::getEntity()->createDbTable();
+				$done[] = 'таблица itb_mcp_rate создана';
+			} catch (\Throwable $e) {
+				$done[] = 'itb_mcp_rate — не удалось: ' . $e->getMessage();
 			}
 		}
 

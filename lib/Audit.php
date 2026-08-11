@@ -34,6 +34,12 @@ class Audit
 		foreach ($kv as $k => $v) { self::$ctx[$k] = $v; }
 	}
 
+	/** Заполнено ли поле контекста — по нему решают, писать ли строку вообще. */
+	public static function hasNote(string $key): bool
+	{
+		return (string)(self::$ctx[$key] ?? '') !== '';
+	}
+
 	public static function args(array $args): void
 	{
 		$s = (string)json_encode($args, JSON_UNESCAPED_UNICODE);

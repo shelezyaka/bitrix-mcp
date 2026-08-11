@@ -13,6 +13,7 @@ return [
 	'lib/Auth.php',
 	'lib/Token.php',
 	'lib/Audit.php',
+	'lib/Rate.php',
 	'lib/Setup.php',
 	'lib/Expose.php',
 	'lib/Api.php',
@@ -23,4 +24,5 @@ return [
 	'lib/Server.php',
 	'lib/Orm/TokenTable.php',
 	'lib/Orm/LogTable.php',
+	'lib/Orm/RateTable.php',
 ];

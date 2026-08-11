@@ -20,6 +20,18 @@ class Server
 			}
 		});
 
+		// Наплыв: в журнал пишется ПЕРВОЕ превышение в окне. Писать каждое —
+		// значит дать нападающему забить журнал вместо базы каталога.
+		$throttled = false;
+		$throttle = static function () use (&$throttled) {
+			$r = Rate::hit((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+			Rate::prune();
+			if ($r['allowed']) { return null; }
+			$throttled = true;
+			if ($r['first']) { Audit::note(['ERROR' => 'превышена частота обращений']); }
+			return $r['retry'];
+		};
+
 		try {
 			$r = Transport::respond(
 				(string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
@@ -27,7 +39,8 @@ class Server
 				(string)file_get_contents('php://input'),
 				[Auth::class, 'registryFor'],
 				[self::class, 'dispatch'],
-				self::origins()
+				self::origins(),
+				$throttle
 			);
 		} catch (\Throwable $e) {
 			// Без этого ошибку показывает Битрикс: HTML со стек-трейсом и путями
@@ -52,7 +65,11 @@ class Server
 		header('Cache-Control: no-store');
 		echo $r['body'];
 
-		Audit::flush($r['status'], strlen($r['body']));
+		// Отвергнутые по частоте в журнал не идут — кроме первого в окне, который
+		// уже отмечен выше. Иначе запись о наплыве обходится дороже самого наплыва.
+		if (!$throttled || Audit::hasNote('ERROR')) {
+			Audit::flush($r['status'], strlen($r['body']));
+		}
 	}
 
 	/**
