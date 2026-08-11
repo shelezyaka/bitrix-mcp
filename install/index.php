@@ -40,6 +40,7 @@ class itb_mcp extends CModule
 	{
 		global $APPLICATION;
 		try {
+			$this->CheckVisible();
 			// ⚠️ Порядок: сперва таблицы, потом регистрация. Модуль,
 			// зарегистрированный без своих таблиц, поднимается и падает на первом
 			// же запросе — а выглядит установленным.
@@ -66,6 +67,39 @@ class itb_mcp extends CModule
 	}
 
 	/**
+	 * Видит ли Битрикс папку модуля своим механизмом поиска.
+	 *
+	 * ⚠️⚠️ Проверка стоит ПЕРВОЙ и не совпадает с «файлы на диске есть».
+	 * Установщик находит себя через `__DIR__` и работает всегда, а вот
+	 * `Loader::includeModule('itb.mcp')` в бою идёт через `getLocal()` — и если
+	 * тот не видит `local/`, модуль установится и не заработает ни разу.
+	 * Расхождение возможно: иной DOCUMENT_ROOT, симлинки в `ext_www`, права на
+	 * папку, при которых процессу веб-сервера нельзя войти внутрь (тогда
+	 * `file_exists` отвечает «нет» на существующий файл).
+	 *
+	 * Лучше отказаться сразу и назвать ожидаемый путь, чем оставить установленный
+	 * модуль, который молча отвечает 503.
+	 */
+	public function CheckVisible()
+	{
+		$root = rtrim((string)\Bitrix\Main\Application::getDocumentRoot(), '/\\');
+		$want = $root . '/local/modules/' . $this->MODULE_ID . '/include.php';
+
+		$found = \Bitrix\Main\Loader::getLocal('modules/' . $this->MODULE_ID . '/include.php');
+		if ($found !== false && file_exists($found) && strpos($found, '/local/') !== false) {
+			return true;
+		}
+
+		throw new \Exception(
+			'Битрикс не видит папку модуля. Ожидается файл: ' . $want . "\n"
+			. 'Установщик при этом запущен из: ' . __DIR__ . "\n"
+			. 'Если файл на диске есть, дело в доступе: папка local и всё внутри неё '
+			. 'должны читаться тем же пользователем, под которым работает веб-сервер '
+			. '(сравните владельца и права с соседней папкой bitrix).'
+		);
+	}
+
+	/**
 	 * Таблицы токенов и журнала.
 	 *
 	 * ⚠️ Создаём через ORM (`createDbTable`), а не своим SQL: типы полей описаны
@@ -76,7 +110,17 @@ class itb_mcp extends CModule
 	public function InstallDB()
 	{
 		\Bitrix\Main\Loader::includeModule('main');
-		require_once __DIR__ . '/../include.php';
+
+		// ⚠️⚠️ Классы таблиц подключаем ПРЯМЫМ путём от `__DIR__`, а не через
+		// автозагрузку. Автозагрузчик Битрикса ищет модуль функцией `getLocal()`:
+		// сперва `DOCUMENT_ROOT/local/modules/`, потом `DOCUMENT_ROOT/bitrix/modules/`.
+		// Если первая папка почему-либо не видна процессу веб-сервера, он молча
+		// уходит во вторую и падает с «Failed opening required
+		// …/bitrix/modules/itb.mcp/lib/Orm/TokenTable.php» — сообщением, которое
+		// показывает путь, куда модуль никто и не клал, и уводит от причины.
+		// `__DIR__` таких вопросов не задаёт: это всегда папка ЭТОГО файла.
+		require_once __DIR__ . '/../lib/Orm/TokenTable.php';
+		require_once __DIR__ . '/../lib/Orm/LogTable.php';
 
 		$db = \Bitrix\Main\Application::getConnection();
 
