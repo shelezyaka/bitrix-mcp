@@ -67,6 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 				(int)$GLOBALS['USER']->GetID(),
 				itbMcpIblockList((string)($_POST['tok_iblocks'] ?? ''))
 			);
+			// Единственный момент за всю жизнь токена, когда его видно: в базе
+			// лежит только sha256, показать повторно нельзя ни нам, ни владельцу.
+			$freshToken = $r['token'];
 		} elseif ($act === 'rights') {
 			$id = (int)$arg;
 			\Itb\Mcp\Token::setRights(
@@ -75,8 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 				itbMcpIblockList((string)($_POST['ib_tok'][$id] ?? ''))
 			);
 			$msg = 'Права токена ' . $id . ' изменены.';
-			// Единственный момент, когда токен виден: в базе только sha256.
-			$freshToken = $r['token'];
 		} elseif ($act === 'expose') {
 			// Список собирается заново из отмеченных галочек: снятая галочка
 			// обязана закрывать доступ, а не требовать отдельной ветки кода.
