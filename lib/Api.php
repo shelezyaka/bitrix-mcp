@@ -285,12 +285,24 @@ class Api
 		return $root !== '' && strpos($file, $root) === 0 ? substr($file, strlen($root)) : $file;
 	}
 
+	/**
+	 * Имя класса по конвенции Битрикса: lib/foo/bar.php → Bitrix\<module>\Foo\Bar.
+	 *
+	 * ⚠ class_exists здесь ЗАГРУЖАЕТ файл, а тот может наследовать класс из
+	 * модуля, которого на сайте нет: в каталоге такой нашёлся и уронил весь обход
+	 * ошибкой «Class Bitrix\Rest\… not found». Один негодный файл не должен
+	 * лишать ответа остальные двести.
+	 */
 	private static function guessClass(string $module, string $rel): ?string
 	{
 		$parts = explode('/', substr($rel, 0, -4));
 		$ns    = 'Bitrix\\' . str_replace('.', '\\', $module) . '\\'
 			. implode('\\', array_map('ucfirst', $parts));
 
-		return class_exists($ns) ? $ns : null;
+		try {
+			return class_exists($ns) ? $ns : null;
+		} catch (\Throwable $e) {
+			return null;
+		}
 	}
 }

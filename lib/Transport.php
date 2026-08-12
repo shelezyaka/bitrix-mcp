@@ -89,12 +89,33 @@ class Transport
 		return self::json(200, $res);
 	}
 
+	/**
+	 * Ответ телом JSON.
+	 *
+	 * ⚠ JSON_INVALID_UTF8_SUBSTITUTE обязателен. Инструменты читают чужие файлы и
+	 * поля чужих баз, и один байт не в той кодировке роняет json_encode целиком:
+	 * тот возвращает false, а наружу уходит 200 с ПУСТЫМ телом — ответ, который
+	 * ничего не объясняет ни человеку, ни клиенту. Лучше «����» в одном поле.
+	 */
 	private static function json(int $status, array $payload): array
 	{
+		$flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
+		$body  = json_encode($payload, $flags);
+
+		if ($body === false) {
+			// Подмена символов не спасла — значит дело не в кодировке (глубина,
+			// рекурсия, NAN). Всё равно отвечаем внятно, а не пустотой.
+			$body = (string)json_encode(
+				Protocol::err(null, Protocol::E_INTERNAL,
+					'Ответ не удалось собрать в JSON: ' . json_last_error_msg()),
+				JSON_UNESCAPED_UNICODE);
+			$status = 500;
+		}
+
 		return [
 			'status'  => $status,
 			'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
-			'body'    => (string)json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+			'body'    => $body,
 		];
 	}
 
