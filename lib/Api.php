@@ -268,13 +268,24 @@ class Api
 		return $m->getName() . '(' . implode(', ', $args) . ')' . $ret;
 	}
 
-	private static function firstDocLine($doc): ?string
+	/**
+	 * Первая содержательная строка докблока.
+	 *
+	 * ⚠ Разбивка по «\r\n|\r|\n», а не по «\R». Без модификатора u шаблон \R
+	 * считает переводом строки и байт 0x85, а тот стоит вторым в букве «х»
+	 * (D1 85) — строка резалась посреди символа, и битый UTF-8 ронял весь ответ.
+	 * Модификатор u здесь не годится: докблок бывает и не в UTF-8, тогда
+	 * preg_split вернёт false.
+	 */
+	public static function firstDocLine($doc): ?string
 	{
 		if (!is_string($doc) || $doc === '') { return null; }
-		foreach (preg_split('~\R~', $doc) as $line) {
+
+		foreach (preg_split('~\r\n|\r|\n~', $doc) as $line) {
 			$line = trim($line, " \t*/");
 			if ($line !== '' && strpos($line, '@') !== 0) { return $line; }
 		}
+
 		return null;
 	}
 
@@ -300,7 +311,11 @@ class Api
 			. implode('\\', array_map('ucfirst', $parts));
 
 		try {
-			return class_exists($ns) ? $ns : null;
+			// Имя возвращаем КАК ОБЪЯВЛЕНО: собранное из пути даёт верный регистр
+			// лишь случайно (Bitrix\catalog\Storedocumenttable вместо
+			// Bitrix\Catalog\StoreDocumentTable). PHP регистр не различает, а
+			// человек и модель — да, и инструмент нужен ровно ради точного имени.
+			return class_exists($ns) ? (new \ReflectionClass($ns))->getName() : null;
 		} catch (\Throwable $e) {
 			return null;
 		}
