@@ -153,6 +153,13 @@ class Tools
 	{
 		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'orders', 'N') !== 'Y') { return []; }
 
+		// Модуль sale есть не во всех редакциях Битрикса. Без него инструменты не
+		// показываем вовсе: иначе модель зовёт их и получает отказ на каждый вызов,
+		// а выглядит это как сломанный сервер, а не как отсутствующий модуль.
+		// isModuleInstalled, а не includeModule: проверка идёт на каждом запросе,
+		// и грузить ради неё весь модуль незачем.
+		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('sale')) { return []; }
+
 		return [
 			new Tool(
 				'order_search',

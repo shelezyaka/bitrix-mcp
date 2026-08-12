@@ -352,12 +352,18 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<code>engine</code>.
 	</td></tr>
 	<tr class="heading"><td colspan="2">Заказы</td></tr>
+	<?php $hasSale = \Bitrix\Main\ModuleManager::isModuleInstalled('sale'); ?>
 	<tr>
 		<td>Разрешить читать заказы:</td>
 		<td><input type="checkbox" name="orders" value="Y"<?php
-			echo Option::get($module_id, 'orders', 'N') === 'Y' ? ' checked' : ''; ?>>
+			echo Option::get($module_id, 'orders', 'N') === 'Y' ? ' checked' : '';
+			echo $hasSale ? '' : ' disabled'; ?>>
 			добавляет <code>order_search</code>, <code>order_get</code>,
-			<code>order_statuses</code></td>
+			<code>order_statuses</code>
+			<?php if (!$hasSale): ?>
+			<br><b style="color:#c0392b">Модуль «Интернет-магазин» (sale) на этом сайте
+				не установлен — заказов нет, включать нечего.</b>
+			<?php endif; ?></td>
 	</tr>
 	<tr><td colspan="2" style="color:#c60">
 		⚠️ В свойствах заказа лежат <b>персональные данные покупателей</b>: имя, телефон,
