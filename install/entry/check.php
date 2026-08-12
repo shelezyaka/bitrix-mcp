@@ -5,6 +5,13 @@
  * Открывать браузером, а не из консоли: у консольного PHP другой пользователь,
  * другой php.ini и другой open_basedir.
  */
+// Шаблон: установщик копирует его в /mcp/. Из папки модуля не работает —
+// см. пояснение в entry/index.php.
+if (strpos(str_replace('\\', '/', __DIR__), '/modules/') !== false) {
+	http_response_code(404);
+	die();
+}
+
 define('NO_KEEP_STATISTIC', true);
 define('NO_AGENT_CHECK', true);
 

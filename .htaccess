@@ -1,0 +1,19 @@
+# Папка модуля по HTTP недоступна.
+#
+# Битрикс кладёт такой же запрет в bitrix/modules/, но local/modules/ создаёт
+# владелец сайта, и там его нет. Без этого файла из папки модуля отдаются
+# исходники и README, а install/entry/index.php работает как ВТОРОЙ эндпоинт MCP —
+# мимо любых правил, навешенных на /mcp/.
+#
+# Модуль подключается ядром с диска, поэтому запрет ничего не ломает.
+#
+# ⚠️ Это Apache. На чистом nginx файл не читается — закройте папку правилом
+# сервера:  location ^~ /local/modules/ { deny all; }
+
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
