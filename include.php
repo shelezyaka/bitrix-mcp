@@ -17,7 +17,11 @@
 	'Itb\\Mcp\\Api'       => 'lib/Api.php',
 	'Itb\\Mcp\\D7'        => 'lib/D7.php',
 	'Itb\\Mcp\\Data'      => 'lib/Data.php',
+	'Itb\\Mcp\\Catalog'   => 'lib/Catalog.php',
 	'Itb\\Mcp\\Orders'    => 'lib/Orders.php',
+	'Itb\\Mcp\\Users'     => 'lib/Users.php',
+	'Itb\\Mcp\\Path'      => 'lib/Path.php',
+	'Itb\\Mcp\\Files'     => 'lib/Files.php',
 	'Itb\\Mcp\\Tools'     => 'lib/Tools.php',
 	'Itb\\Mcp\\Server'    => 'lib/Server.php',
 

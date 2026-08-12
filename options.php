@@ -59,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			Option::set($module_id, 'rate_limit', max(0, (int)($_POST['rate_limit'] ?? 120)));
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
+			Option::set($module_id, 'files', empty($_POST['files']) ? 'N' : 'Y');
 			Option::set($module_id, 'engine', empty($_POST['engine']) ? 'legacy' : 'orm');
 			$msg = 'Настройки сохранены.';
 		} elseif ($act === 'issue') {
@@ -204,7 +205,7 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 					<label title="<?php echo htmlspecialcharsbx($label); ?>"><input type="checkbox"
 						name="g[<?php echo $tid; ?>][]" value="<?php echo htmlspecialcharsbx($key); ?>"<?php
 						echo ($gr === null || in_array($key, $gr, true)) ? ' checked' : ''; ?>>
-						<?php echo $key === 'catalog' ? 'каталог' : 'API'; ?></label>
+						<?php echo htmlspecialcharsbx(\Itb\Mcp\Tools::GROUP_SHORT[$key] ?? $key); ?></label>
 					<?php endforeach; ?>
 					<br><input type="text" name="ib_tok[<?php echo $tid; ?>]" size="16"
 						value="<?php echo $ibl === null ? '' : htmlspecialcharsbx(implode(', ', $ibl)); ?>"
@@ -245,7 +246,7 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 				value="<?php echo htmlspecialcharsbx($key); ?>" checked>
 				<?php echo htmlspecialcharsbx($label); ?></label>
 		<?php endforeach; ?>
-		<span style="color:#777">снимите обе — останется только <code>site_info</code></span></td>
+		<span style="color:#777">снимите все — останется только <code>site_info</code></span></td>
 	</tr>
 	<tr>
 		<td>Инфоблоки (через запятую, пусто — все открытые):</td>
@@ -359,7 +360,7 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			echo Option::get($module_id, 'orders', 'N') === 'Y' ? ' checked' : '';
 			echo $hasSale ? '' : ' disabled'; ?>>
 			добавляет <code>order_search</code>, <code>order_get</code>,
-			<code>order_statuses</code>
+			<code>order_statuses</code>, <code>order_stats</code>, <code>user_get</code>
 			<?php if (!$hasSale): ?>
 			<br><b style="color:#c0392b">Модуль «Интернет-магазин» (sale) на этом сайте
 				не установлен — заказов нет, включать нечего.</b>
@@ -367,7 +368,8 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 	</tr>
 	<tr><td colspan="2" style="color:#c60">
 		⚠️ В свойствах заказа лежат <b>персональные данные покупателей</b>: имя, телефон,
-		адрес доставки. Они уйдут в ответ инструмента <code>order_get</code>, а значит
+		адрес доставки. То же самое отдаёт <code>user_get</code> — карточку покупателя
+		целиком. Они уйдут в ответ, а значит
 		за пределы сайта — модели и туда, где эта переписка хранится. Включайте, только
 		если понимаете, зачем это нужно, и помните про 152-ФЗ. По умолчанию выключено.
 	</td></tr>
@@ -392,6 +394,30 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		классу, поэтому произвольный файл не прочитать, а файл без класса
 		(<code>.env</code>, конфиги, выгрузки) — не прочитать вовсе. Но ключи,
 		записанные прямо в коде класса, станут видны. По умолчанию группа выключена.
+	</td></tr>
+	<tr class="heading"><td colspan="2">Файлы проекта</td></tr>
+	<tr>
+		<td>Разрешить чтение файлов:</td>
+		<td><input type="checkbox" name="files" value="Y"<?php
+			echo Option::get($module_id, 'files', 'N') === 'Y' ? ' checked' : ''; ?>>
+			добавляет <code>file_read</code>, <code>file_list</code>, <code>file_grep</code></td>
+	</tr>
+	<tr><td colspan="2" style="color:#777">
+		Дополняет разведку API там, где она бессильна: компоненты, шаблоны,
+		<code>php_interface</code> и обычные функции классами не являются, и рефлексия
+		их не видит.<br>
+		Читать разрешено только из <code>/local/</code>, <code>/bitrix/templates/</code>
+		и <code>/bitrix/modules/*/lib/</code>. Остальное отвергается, включая
+		<code>/bitrix/php_interface/</code>, где лежит <code>dbconn.php</code>. Отдельно
+		закрыты по имени <code>dbconn.php</code>, <code>.settings.php</code>,
+		<code>.env</code>, <code>.htpasswd</code> и ключи, а также папки
+		<code>.git</code>, <code>node_modules</code> и <code>upload</code>. Открываются
+		только текст и код — логи, дампы, архивы и картинки отсекаются по расширению.
+		Путь проверяется до и после разрешения симлинков, «..» не схлопывается,
+		а отвергается.<br>
+		⚠️ Всё это <b>ваш исходный код</b>, и он уйдёт за пределы сайта. Ключи и пароли,
+		записанные прямо в коде, станут видны — списком имён закрыты только обычные
+		места их хранения. По умолчанию группа выключена.
 	</td></tr>
 	<?php if ($canWrite): ?>
 	<tr><td>&nbsp;</td><td><button type="submit" name="act" value="save">Сохранить</button></td></tr>

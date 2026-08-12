@@ -275,7 +275,8 @@ class Data
 		return ['iblock' => $iblock, 'total' => count($out), 'sections' => $out];
 	}
 
-	private static function assertIblock(int $id): void
+	/** Публичный: тем же правилом пользуется Catalog, у него свой вход в элемент. */
+	public static function assertIblock(int $id): void
 	{
 		if (Expose::allows($id)) { return; }
 

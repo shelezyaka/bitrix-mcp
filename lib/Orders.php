@@ -132,6 +132,90 @@ class Orders
 		return ['total' => count($out), 'statuses' => $out];
 	}
 
+	/**
+	 * Сводка за период: считает база, а не модель.
+	 *
+	 * Сотня заказов в ответе — это сотня строк, которые кто-то должен сложить.
+	 * GROUP BY делает это одним запросом и без арифметических ошибок.
+	 */
+	public static function stats(array $a): array
+	{
+		self::init();
+
+		$filter = [];
+		if (($a['from'] ?? '') !== '') { $filter['>=DATE_INSERT'] = self::date((string)$a['from'], false); }
+		if (($a['to'] ?? '') !== '')   { $filter['<DATE_INSERT']  = self::date((string)$a['to'], true); }
+		if (($a['status'] ?? '') !== '') { $filter['=STATUS_ID'] = (string)$a['status']; }
+
+		$sum = static function (string $name, string $expr, array $from) {
+			return new \Bitrix\Main\ORM\Fields\ExpressionField($name, $expr, $from);
+		};
+
+		$total = \Bitrix\Sale\Internals\OrderTable::getRow([
+			'select'  => ['CNT', 'SUM_PRICE', 'SUM_PAID', 'CNT_PAID', 'CNT_CANCELED', 'SUM_CANCELED'],
+			'filter'  => $filter,
+			'runtime' => [
+				$sum('CNT', 'COUNT(1)', []),
+				$sum('SUM_PRICE', 'SUM(%s)', ['PRICE']),
+				$sum('SUM_PAID', 'SUM(%s)', ['SUM_PAID']),
+				$sum('CNT_PAID', "SUM(CASE WHEN %s = 'Y' THEN 1 ELSE 0 END)", ['PAYED']),
+				$sum('CNT_CANCELED', "SUM(CASE WHEN %s = 'Y' THEN 1 ELSE 0 END)", ['CANCELED']),
+				$sum('SUM_CANCELED', "SUM(CASE WHEN %s = 'Y' THEN %s ELSE 0 END)", ['CANCELED', 'PRICE']),
+			],
+		]);
+
+		$count    = (int)($total['CNT'] ?? 0);
+		$price    = round((float)($total['SUM_PRICE'] ?? 0), 2);
+		$canceled = round((float)($total['SUM_CANCELED'] ?? 0), 2);
+
+		$names = [];
+		foreach (self::statuses([])['statuses'] as $s) { $names[$s['id']] = $s['name']; }
+
+		$byStatus = [];
+		$rs = \Bitrix\Sale\Internals\OrderTable::getList([
+			'select'  => ['STATUS_ID', 'CNT', 'SUM_PRICE'],
+			'filter'  => $filter,
+			'runtime' => [$sum('CNT', 'COUNT(1)', []), $sum('SUM_PRICE', 'SUM(%s)', ['PRICE'])],
+			'order'   => ['CNT' => 'DESC'],
+		]);
+		while ($r = $rs->fetch()) {
+			$sid = (string)$r['STATUS_ID'];
+			$byStatus[] = ['id' => $sid, 'name' => $names[$sid] ?? $sid,
+				'orders' => (int)$r['CNT'], 'sum' => round((float)$r['SUM_PRICE'], 2)];
+		}
+
+		$byUser = [];
+		$rs = \Bitrix\Sale\Internals\OrderTable::getList([
+			'select'  => ['USER_ID', 'CNT', 'SUM_PRICE'],
+			'filter'  => $filter,
+			'runtime' => [$sum('CNT', 'COUNT(1)', []), $sum('SUM_PRICE', 'SUM(%s)', ['PRICE'])],
+			'order'   => ['CNT' => 'DESC'],
+			'limit'   => 10,
+		]);
+		while ($r = $rs->fetch()) {
+			$byUser[] = ['user_id' => (int)$r['USER_ID'], 'orders' => (int)$r['CNT'],
+				'sum' => round((float)$r['SUM_PRICE'], 2)];
+		}
+
+		return [
+			'from'  => (string)($a['from'] ?? 'без нижней границы'),
+			'to'    => (string)($a['to'] ?? 'без верхней границы'),
+			'total' => [
+				'orders'           => $count,
+				'sum'              => $price,
+				'paid_sum'         => round((float)($total['SUM_PAID'] ?? 0), 2),
+				'paid_orders'      => (int)($total['CNT_PAID'] ?? 0),
+				'canceled_orders'  => (int)($total['CNT_CANCELED'] ?? 0),
+				'canceled_sum'     => $canceled,
+				'sum_without_canceled' => round($price - $canceled, 2),
+			],
+			'by_status' => $byStatus,
+			'by_user'   => $byUser,
+			'note' => 'by_user — десять покупателей с наибольшим числом заказов. Кто это,'
+				. ' покажет user_get: у обменов с маркетплейсами заказы висят на роботе.',
+		];
+	}
+
 	private static function init(): void
 	{
 		if (!\Bitrix\Main\Loader::includeModule('sale')) {
