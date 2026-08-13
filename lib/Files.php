@@ -13,37 +13,61 @@ class Files
 	const LINES_DEF   = 300;
 	const LINES_MAX   = 2000;
 	const LIST_MAX    = 500;
-	const GREP_FILES  = 4000;
-	const GREP_HITS   = 100;
-	const GREP_BYTES  = 1048576;
+	const GREP_FILES    = 4000;
+	const GREP_HITS     = 100;
+	/** Иначе один шумный файл съедает весь лимит, и до остальных дело не доходит. */
+	const GREP_PER_FILE = 20;
+	const GREP_BYTES   = 1048576;
+	const GREP_SECONDS = 10;
 
 	public static function read(array $a): array
 	{
 		$abs = Path::real((string)($a['path'] ?? ''));
 
-		$size = (int)filesize($abs);
-		if ($size > self::MAX_BYTES) {
-			throw new ToolError('Файл велик: ' . $size . ' Б при пределе ' . self::MAX_BYTES
-				. '. Возьмите кусок через from и lines.');
-		}
-
-		$raw = (string)file_get_contents($abs);
-		if (strpos($raw, "\0") !== false) {
-			throw new ToolError('Файл двоичный, читать нечего');
-		}
-
-		$all   = preg_split('~\r\n|\r|\n~', $raw) ?: [];
-		$count = count($all);
-
+		$size  = (int)filesize($abs);
 		$from  = max(1, (int)($a['from'] ?? 1));
 		$lines = (int)($a['lines'] ?? self::LINES_DEF);
 		$lines = min($lines > 0 ? $lines : self::LINES_DEF, self::LINES_MAX);
 
-		$part = array_slice($all, $from - 1, $lines);
+		// Большой файл читаем построчно: целиком он не влезет ни в память, ни в
+		// ответ, но кусок из него взять можно — иначе from и lines бесполезны
+		// именно там, где они нужнее всего.
+		$whole = $size <= self::MAX_BYTES;
+
+		$part  = [];
+		$count = 0;
+		$bytes = 0;
+		$cut   = false;
+		$long  = false;
+
+		$fh = fopen($abs, 'rb');
+		if ($fh === false) { throw new ToolError('Файл не открывается на чтение'); }
+		while (($line = fgets($fh)) !== false) {
+			$count++;
+			if ($count >= $from && count($part) < $lines && !$cut) {
+				$line = rtrim($line, "\r\n");
+				if (strpos($line, "\0") !== false) {
+					fclose($fh);
+					throw new ToolError('Файл двоичный, читать нечего');
+				}
+				// Предел по байтам, а не только по строкам: у сжатого js весь
+				// файл — одна строка, и счёт строк её не удержит.
+				$bytes += strlen($line) + 1;
+				if ($bytes > self::MAX_BYTES) {
+					$cut = true;
+					// Одна строка длиннее предела — отдаём её начало, иначе ответ
+					// был бы пуст, а следующий кусок опять начинался бы с неё.
+					if (!$part) { $part[] = substr($line, 0, self::MAX_BYTES); $long = true; }
+				} else {
+					$part[] = $line;
+				}
+			}
+			if (!$whole && ($cut || $count >= $from + $lines)) { break; }
+		}
+		fclose($fh);
 
 		$out = [
 			'path'  => Path::relative($abs),
-			'lines' => $count,
 			'from'  => $from,
 			'shown' => count($part),
 			'size'  => $size,
@@ -51,9 +75,22 @@ class Files
 			// наугад испортила бы то, что и так читается.
 			'text'  => implode("\n", $part),
 		];
-		if ($from + count($part) - 1 < $count) {
-			$out['more'] = 'Показаны не все строки: всего ' . $count . '. Следующий кусок — from '
-				. ($from + count($part)) . '.';
+
+		if ($long) {
+			$out['more'] = 'Строка ' . $from . ' длиннее предела в ' . self::MAX_BYTES
+				. ' Б — показано её начало. Дальше читайте с from ' . ($from + 1) . '.';
+		} elseif ($cut) {
+			$out['more'] = 'Обрыв по объёму: за раз отдаётся не больше ' . self::MAX_BYTES
+				. ' Б. Следующий кусок — from ' . ($from + count($part)) . '.';
+		} elseif ($whole) {
+			$out['lines'] = $count;
+			if ($from + count($part) - 1 < $count) {
+				$out['more'] = 'Показаны не все строки: всего ' . $count . '. Следующий кусок — from '
+					. ($from + count($part)) . '.';
+			}
+		} else {
+			$out['more'] = 'Файл больше ' . self::MAX_BYTES . ' Б, читается кусками.'
+				. ' Следующий — from ' . ($from + count($part)) . '.';
 		}
 
 		return $out;
@@ -71,15 +108,16 @@ class Files
 
 			$full = $abs . '/' . $name;
 			$dir  = is_dir($full);
-			$rel  = Path::relative($full);
 
 			$items[] = [
 				'name'     => $name,
 				'type'     => $dir ? 'dir' : 'file',
 				'size'     => $dir ? null : (int)filesize($full),
 				'modified' => date('d.m.Y H:i:s', (int)filemtime($full)),
-				// Видно сразу, что из перечисленного получится открыть.
-				'readable' => Path::why($rel, $dir) === null,
+				// Видно сразу, что из перечисленного получится открыть. Проверка
+				// та же, что у чтения, и по тому же разрешённому пути: иначе
+				// ссылка наружу значилась бы доступной, а file_read её отверг.
+				'readable' => self::resolve($full, $dir) !== null,
 			];
 		}
 
@@ -109,34 +147,52 @@ class Files
 		$abs = Path::real((string)($a['path'] ?? ''), true);
 		$ci  = !empty($a['ignore_case']);
 
-		$hits    = [];
-		$scanned = 0;
-		$stopped = '';
+		$hits     = [];
+		$scanned  = 0;
+		$stopped  = '';
+		$deadline = microtime(true) + self::GREP_SECONDS;
 
+		// Симлинки не разворачиваем в обход границы: обход в каталог по ссылке
+		// не идёт (RecursiveDirectoryIterator без FOLLOW_SYMLINKS), а ссылку на
+		// файл отсекает resolve() ниже.
 		$it = new \RecursiveIteratorIterator(
 			new \RecursiveDirectoryIterator($abs, \FilesystemIterator::SKIP_DOTS),
 			\RecursiveIteratorIterator::LEAVES_ONLY
 		);
 
 		foreach ($it as $file) {
-			if (count($hits) >= self::GREP_HITS) { $stopped = 'совпадений'; break; }
-			if ($scanned >= self::GREP_FILES)    { $stopped = 'файлов';     break; }
+			if (count($hits) >= self::GREP_HITS)  { $stopped = 'совпадений'; break; }
+			if ($scanned >= self::GREP_FILES)     { $stopped = 'файлов';     break; }
+			if (microtime(true) > $deadline)      { $stopped = 'времени';    break; }
 
-			$full = str_replace('\\', '/', (string)$file->getPathname());
-			$rel  = Path::relative($full);
-			if (Path::why($rel) !== null) { continue; }
-			if ($file->getSize() > self::GREP_BYTES) { continue; }
+			// Проверяем РАЗРЕШЁННЫЙ путь, а не тот, по которому файл нашли:
+			// ссылка local/x.php → bitrix/php_interface/dbconn.php проходит любую
+			// проверку по имени, а прочиталось бы содержимое цели.
+			$full = self::resolve((string)$file->getPathname(), false);
+			if ($full === null) { continue; }
+			$rel = Path::relative($full);
+			if ((int)filesize($full) > self::GREP_BYTES) { continue; }
 
 			$scanned++;
 			$raw = (string)file_get_contents($full);
 			if (($ci ? stripos($raw, $needle) : strpos($raw, $needle)) === false) { continue; }
 
+			$inFile = 0;
 			foreach (preg_split('~\r\n|\r|\n~', $raw) ?: [] as $i => $line) {
 				if (($ci ? stripos($line, $needle) : strpos($line, $needle)) === false) { continue; }
+				// Режем байтами, а не mb_substr: mbstring есть не везде, а его
+				// отсутствие роняло бы весь вызов. Обрубок символа на границе
+				// заменит JSON_INVALID_UTF8_SUBSTITUTE в Transport.
 				$hits[] = ['path' => $rel, 'line' => $i + 1,
-					'text' => mb_substr(trim($line), 0, 200)];
+					'text' => substr(trim($line), 0, 200)];
+				if (++$inFile >= self::GREP_PER_FILE) {
+					$hits[] = ['path' => $rel, 'line' => null,
+						'text' => '… в этом файле показаны первые ' . self::GREP_PER_FILE . ' совпадений'];
+					break;
+				}
 				if (count($hits) >= self::GREP_HITS) { $stopped = 'совпадений'; break; }
 			}
+			if (count($hits) >= self::GREP_HITS) { $stopped = 'совпадений'; break; }
 		}
 
 		$out = ['query' => $needle, 'path' => Path::relative($abs),
@@ -148,5 +204,26 @@ class Files
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Настоящий путь файла, если его разрешено читать; иначе null.
+	 *
+	 * Обход каталога выдаёт путь, по которому файл найден, а прочитается тот,
+	 * куда он ведёт. Проверять надо второй: одной ссылки из разрешённой папки
+	 * хватило бы, чтобы вынести dbconn.php.
+	 */
+	private static function resolve(string $abs, bool $dir): ?string
+	{
+		$real = realpath($abs);
+		if ($real === false) { return null; }
+		$real = str_replace('\\', '/', $real);
+
+		if ($dir !== is_dir($real)) { return null; }
+
+		$rel = Path::relative($real);
+		// relative() вернёт путь как есть, если он вне корня сайта — такой
+		// абсолютный путь белым списком не пройдёт.
+		return Path::why($rel, $dir) === null ? $real : null;
 	}
 }
