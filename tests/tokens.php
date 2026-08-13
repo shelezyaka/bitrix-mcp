@@ -2,7 +2,11 @@
 // Прогон решающей части токенов БЕЗ базы и БЕЗ Битрикса: выпуск, срок, отзыв,
 // белый список. Проверять просрочку вручную («подождём до завтра») — не проверка.
 require __DIR__ . '/../lib/Token.php';
+// Tools нужен ради pick() — правила «сайт И токен». Битрикс он трогает только
+// внутри методов, которые здесь не зовутся.
+require __DIR__ . '/../lib/Tools.php';
 use Itb\Mcp\Token;
+use Itb\Mcp\Tools;
 
 $ok = 0; $bad = 0;
 function is_(string $what, $got, $want) {
@@ -84,6 +88,30 @@ is_('пустой json-список = ни одной', Token::groups(['TOOLS' =
 is_('json-список',         Token::groups(['TOOLS' => '["catalog","api"]']), ['catalog', 'api']);
 is_('список через запятую', Token::groups(['TOOLS' => 'catalog, api']), ['catalog', 'api']);
 is_('только одна группа',   Token::groups(['TOOLS' => '["api"]']), ['api']);
+
+echo "\n=== Набор инструментов: сайт И токен ===\n";
+// Выключенная в настройках группа приходит пустым списком. Право токена на неё
+// не должно давать ничего — ни сразу, ни до перезапуска, ни после.
+$off = ['site' => ['site_info'], 'catalog' => [], 'orders' => [], 'api' => [], 'sql' => []];
+$on  = ['site' => ['site_info'], 'catalog' => ['element_get'], 'orders' => ['order_get'],
+	'api' => [], 'sql' => ['sql_select']];
+
+is_('всё выключено, у токена все права',
+	Tools::pick($off, ['catalog', 'orders', 'api', 'sql']), ['site_info']);
+// array_merge, а не «+»: объединение массивов оставляет значение ЛЕВОГО,
+// и выключенная группа осталась бы включённой прямо в проверке.
+is_('группа выключена, право есть',
+	Tools::pick(array_merge($on, ['sql' => []]), ['sql']), ['site_info']);
+is_('группа включена, права нет',
+	Tools::pick($on, []), ['site_info']);
+is_('группа включена и выдана',
+	Tools::pick($on, ['catalog']), ['site_info', 'element_get']);
+is_('две группы',
+	Tools::pick($on, ['catalog', 'sql']), ['site_info', 'element_get', 'sql_select']);
+is_('право на несуществующую группу',
+	Tools::pick($on, ['выдумка']), ['site_info']);
+// site_info не отключается: без него модель не знает, что ей открыто.
+is_('site_info остаётся всегда', Tools::pick($off, []), ['site_info']);
 
 echo "\n=== Права токена: инфоблоки ===\n";
 is_('пусто = весь белый список сайта', Token::iblocks(['IBLOCKS' => '']), null);

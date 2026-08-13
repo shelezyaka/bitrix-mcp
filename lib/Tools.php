@@ -34,16 +34,7 @@ class Tools
 	{
 		$reg = new Registry();
 
-		$has = static function (string $g) use ($groups) {
-			return in_array($g, $groups, true);
-		};
-
-		foreach (self::all() as $group => $tools) {
-			// site_info доступен всегда: без него модель не знает, что ей открыто,
-			// и начинает подставлять идентификаторы наугад.
-			if ($group !== 'site' && !$has($group)) { continue; }
-			foreach ($tools as $tool) { $reg->add($tool); }
-		}
+		foreach (self::pick(self::all(), $groups) as $tool) { $reg->add($tool); }
 
 		$open = Expose::ids();
 		$reg->setInstructions(
@@ -57,6 +48,32 @@ class Tools
 		);
 
 		return $reg;
+	}
+
+	/**
+	 * Пересечение двух условий: группа включена НА САЙТЕ и выдана ТОКЕНУ.
+	 *
+	 * Выключенная группа приходит сюда пустым списком, поэтому право токена на
+	 * неё ничего не даёт — доступ не «остаётся до перезапуска», его просто нет.
+	 * Проверяется на каждом запросе, состав инструментов нигде не кэшируется.
+	 *
+	 * Чистая функция: см. tests/tokens.php.
+	 *
+	 * @param array<string, Tool[]> $byGroup
+	 * @param string[]              $granted
+	 * @return Tool[]
+	 */
+	public static function pick(array $byGroup, array $granted): array
+	{
+		$out = [];
+		foreach ($byGroup as $group => $tools) {
+			// site_info доступен всегда: без него модель не знает, что ей открыто,
+			// и начинает подставлять идентификаторы наугад.
+			if ($group !== 'site' && !in_array($group, $granted, true)) { continue; }
+			foreach ($tools as $tool) { $out[] = $tool; }
+		}
+
+		return $out;
 	}
 
 	/**
