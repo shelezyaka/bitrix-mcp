@@ -10,13 +10,9 @@ class Site
 	const AGENTS_MAX = 200;
 
 	/**
-	 * Обработчики событий.
-	 *
-	 * Источников два, и они разные. В b_module_to_module лежат обработчики,
-	 * зарегистрированные насовсем (RegisterModuleDependences) — их видно всегда.
-	 * Навешенные в init.php через AddEventHandler в таблицу не попадают: они
-	 * живут только в памяти текущего запроса, и найти их можно, лишь спросив
-	 * про конкретное событие.
+	 * Обработчики событий из двух источников: постоянная регистрация лежит в
+	 * b_module_to_module, а навешенное в init.php — только в памяти запроса,
+	 * и находится лишь запросом про конкретное событие.
 	 */
 	public static function events(array $a): array
 	{
@@ -51,8 +47,7 @@ class Site
 
 		$out = ['total' => count($rows), 'registered' => $rows];
 
-		// Полный ответ возможен только по конкретному событию: findEventHandlers
-		// отдаёт и то, что навешано в init.php на этот запрос.
+		// Полный список даёт только findEventHandlers и только по паре module+event.
 		if ($module !== '' && $event !== '') {
 			$live = [];
 			foreach (\Bitrix\Main\EventManager::getInstance()->findEventHandlers($module, $event) as $x) {
@@ -161,11 +156,8 @@ class Site
 	}
 
 	/**
-	 * Имя обработчика.
-	 *
-	 * У постоянной регистрации это TO_CLASS и TO_METHOD, а у навешенного кодом —
-	 * CALLBACK: класса с методом там нет вовсе, и без разбора самого callback
-	 * самый интересный обработчик выглядел бы пустой строкой.
+	 * Имя обработчика. У навешенного кодом нет ни TO_CLASS, ни TO_METHOD —
+	 * только CALLBACK, и без его разбора такой обработчик выглядит пустым.
 	 */
 	private static function callable(array $r): string
 	{

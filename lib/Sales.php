@@ -7,10 +7,7 @@ use Bitrix\Sale\Internals\OrderTable;
 
 /**
  * Отчёты по продажам: динамика, товары, брошенные корзины.
- *
- * Считает база, наружу уходят только итоги — ни имени покупателя, ни адреса
- * здесь нет. Поэтому группа отдельная: цифры можно отдать тому, кому карточки
- * заказов открывать не нужно.
+ * Наружу уходят только итоги, персональных данных нет — отсюда отдельная группа.
  */
 class Sales
 {
@@ -34,8 +31,7 @@ class Sales
 		if (!isset(self::STEPS[$by])) { $by = 'day'; }
 
 		$filter = self::period($a, 'DATE_INSERT');
-		// Отменённые в динамику не идут: это не продажи. Их отдельно считает
-		// order_stats, и там же видно, сколько их было.
+		// Отменённые — не продажи; сколько их было, показывает order_stats.
 		if (empty($a['with_canceled'])) { $filter['=CANCELED'] = 'N'; }
 
 		$rows = [];
@@ -101,8 +97,7 @@ class Sales
 		$limit = min($limit > 0 ? $limit : self::TOP_DEF, self::TOP_MAX);
 		$sort  = (string)($a['sort'] ?? 'revenue') === 'quantity' ? 'QTY' : 'REVENUE';
 
-		// Отбор по дате ЗАКАЗА, а не строки корзины: корзину могли собрать вчера,
-		// а оформить сегодня.
+		// По дате заказа, а не строки корзины: собрать могли вчера, оформить сегодня.
 		$filter = self::period($a, 'ORDER.DATE_INSERT');
 		$filter['!=ORDER_ID'] = null;
 		if (empty($a['with_canceled'])) { $filter['=ORDER.CANCELED'] = 'N'; }
@@ -112,8 +107,7 @@ class Sales
 			'select'  => ['PRODUCT_ID', 'NAME_ANY', 'URL_ANY', 'QTY', 'REVENUE', 'ORDERS'],
 			'filter'  => $filter,
 			'runtime' => [
-				// Название и ссылка берутся через MAX: у одного товара они могли
-				// меняться между заказами, а группировка идёт по идентификатору.
+				// MAX: название и ссылка могли меняться, группировка идёт по ID.
 				new ExpressionField('NAME_ANY', 'MAX(%s)', ['NAME']),
 				new ExpressionField('URL_ANY', 'MAX(%s)', ['DETAIL_PAGE_URL']),
 				new ExpressionField('QTY', 'SUM(%s)', ['QUANTITY']),
@@ -154,8 +148,7 @@ class Sales
 		$limit = (int)($a['limit'] ?? self::TOP_DEF);
 		$limit = min($limit > 0 ? $limit : self::TOP_DEF, self::TOP_MAX);
 
-		// Отложенное (DELAY) — это список желаний, а не брошенная покупка.
-		// Недоступное к покупке (CAN_BUY = N) — остаток чужой корзины.
+		// DELAY — список желаний, CAN_BUY = N — недоступный к покупке остаток.
 		$filter = self::period($a, 'DATE_INSERT') + [
 			'=ORDER_ID' => null,
 			'=DELAY'    => 'N',
