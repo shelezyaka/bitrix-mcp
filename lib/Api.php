@@ -240,6 +240,91 @@ class Api
 		return (bool)preg_match('~^[a-zA-Z0-9_.-]+$~', $name) && strpos($name, '..') === false;
 	}
 
+	/**
+	 * Обычная функция: где объявлена и как вызывается.
+	 *
+	 * Классы находит автозагрузка, функции — нет: они существуют, только если
+	 * их файл уже подключён. Поэтому здесь видно ровно то, что реально
+	 * объявлено к этому моменту, — свой код из php_interface в том числе.
+	 */
+	public static function functionInfo(array $a): array
+	{
+		$name = trim((string)($a['name'] ?? ''));
+		if ($name === '') { return self::functionList(trim((string)($a['query'] ?? ''))); }
+
+		if (!preg_match('~^\\\\?[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)*$~', $name)) {
+			throw new ToolError('Имя функции: буквы, цифры, подчёркивание и обратный слеш');
+		}
+		// function_exists автозагрузку не запускает, подключения файла здесь нет.
+		if (!function_exists($name)) {
+			throw new ToolError('Функция ' . $name . ' в этой установке не объявлена.'
+				. ' Она может лежать в файле, который на этом запросе не подключался.');
+		}
+
+		$r = new \ReflectionFunction($name);
+
+		$args = [];
+		foreach ($r->getParameters() as $p) {
+			$t = $p->hasType() ? (string)$p->getType() . ' ' : '';
+			$d = '';
+			if ($p->isDefaultValueAvailable()) {
+				try {
+					$v = $p->getDefaultValue();
+					$d = ' = ' . (is_array($v) ? '[]' : var_export($v, true));
+				} catch (\Throwable $e) {}
+			}
+			$args[] = $t . '$' . $p->getName() . $d;
+		}
+
+		return [
+			'name'      => $r->getName(),
+			'internal'  => $r->isInternal(),
+			'file'      => $r->isInternal() ? null : self::relative((string)$r->getFileName()),
+			'line'      => $r->isInternal() ? null : $r->getStartLine(),
+			'signature' => $r->getName() . '(' . implode(', ', $args) . ')'
+				. ($r->hasReturnType() ? ': ' . (string)$r->getReturnType() : ''),
+			'doc'       => self::firstDocLine($r->getDocComment()),
+		];
+	}
+
+	/** Объявленные на сайте функции с отбором по части имени. */
+	private static function functionList(string $query): array
+	{
+		$defined = get_defined_functions();
+		$all     = $defined['user'] ?? [];
+
+		$found = [];
+		foreach ($all as $fn) {
+			if ($query !== '' && stripos($fn, $query) === false) { continue; }
+			$found[] = $fn;
+		}
+
+		$total = count($found);
+		$found = array_slice($found, 0, 100);
+
+		$out = [];
+		foreach ($found as $fn) {
+			try {
+				$r = new \ReflectionFunction($fn);
+				$out[] = ['name' => $fn, 'file' => self::relative((string)$r->getFileName()),
+					'line' => $r->getStartLine()];
+			} catch (\Throwable $e) {
+				$out[] = ['name' => $fn, 'file' => null, 'line' => null];
+			}
+		}
+
+		return [
+			'total'     => $total,
+			'shown'     => count($out),
+			'declared'  => count($all),
+			'functions' => $out,
+			'note' => $total > count($out)
+				? 'Показаны первые ' . count($out) . ' из ' . $total . ' — уточните query.'
+				: 'Это функции, объявленные на этом запросе. Функции из файлов, которые'
+					. ' подключаются только на витрине, сюда не попадут.',
+		];
+	}
+
 	private static function reflect(string $name): \ReflectionClass
 	{
 		if (!class_exists($name) && !interface_exists($name) && !trait_exists($name)) {

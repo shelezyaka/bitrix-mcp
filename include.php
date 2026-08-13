@@ -22,6 +22,8 @@
 	'Itb\\Mcp\\Users'     => 'lib/Users.php',
 	'Itb\\Mcp\\Path'      => 'lib/Path.php',
 	'Itb\\Mcp\\Files'     => 'lib/Files.php',
+	'Itb\\Mcp\\Sql'       => 'lib/Sql.php',
+	'Itb\\Mcp\\Site'      => 'lib/Site.php',
 	'Itb\\Mcp\\Tools'     => 'lib/Tools.php',
 	'Itb\\Mcp\\Server'    => 'lib/Server.php',
 

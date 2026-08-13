@@ -27,6 +27,8 @@ return [
 	'lib/Users.php',
 	'lib/Path.php',
 	'lib/Files.php',
+	'lib/Sql.php',
+	'lib/Site.php',
 	'lib/Tools.php',
 	'lib/Server.php',
 	'lib/Orm/TokenTable.php',

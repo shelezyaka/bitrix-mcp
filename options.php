@@ -60,6 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
 			Option::set($module_id, 'files', empty($_POST['files']) ? 'N' : 'Y');
+			Option::set($module_id, 'sql', empty($_POST['sql']) ? 'N' : 'Y');
+			// Белый список нормализуем тем же разбором, что и проверка запроса:
+			// иначе в настройке может лежать одно, а действовать другое.
+			Option::set($module_id, 'sql_tables',
+				implode(', ', \Itb\Mcp\Sql::parse((string)($_POST['sql_tables'] ?? ''))));
 			Option::set($module_id, 'engine', empty($_POST['engine']) ? 'legacy' : 'orm');
 			$msg = 'Настройки сохранены.';
 		} elseif ($act === 'issue') {
@@ -378,8 +383,10 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		<td>Разрешить читать устройство кода:</td>
 		<td><input type="checkbox" name="api" value="Y"<?php
 			echo Option::get($module_id, 'api', 'N') === 'Y' ? ' checked' : ''; ?>>
-			добавляет инструменты <code>api_modules</code>, <code>api_class</code>,
-			<code>api_entity</code>, <code>api_source</code>, <code>api_find_class</code></td>
+			добавляет <code>api_modules</code>, <code>api_class</code>,
+			<code>api_entity</code>, <code>api_source</code>, <code>api_find_class</code>,
+			<code>api_function</code>, <code>api_events</code>, <code>api_agents</code>,
+			<code>hl_list</code></td>
 	</tr>
 	<tr><td colspan="2" style="color:#777">
 		Группа отвечает на вопрос «что за классы есть в этой установке и как они
@@ -418,6 +425,33 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		⚠️ Всё это <b>ваш исходный код</b>, и он уйдёт за пределы сайта. Ключи и пароли,
 		записанные прямо в коде, станут видны — списком имён закрыты только обычные
 		места их хранения. По умолчанию группа выключена.
+	</td></tr>
+	<tr class="heading"><td colspan="2">Запросы к базе</td></tr>
+	<tr>
+		<td>Разрешить произвольный SELECT:</td>
+		<td><input type="checkbox" name="sql" value="Y"<?php
+			echo Option::get($module_id, 'sql', 'N') === 'Y' ? ' checked' : ''; ?>>
+			добавляет <code>sql_tables</code> и <code>sql_select</code></td>
+	</tr>
+	<tr>
+		<td>Разрешённые таблицы (через запятую, пусто — все):</td>
+		<td><textarea name="sql_tables" rows="2" cols="50"><?php
+			echo htmlspecialcharsbx((string)Option::get($module_id, 'sql_tables', '')); ?></textarea></td>
+	</tr>
+	<tr><td colspan="2" style="color:#777">
+		Самая сильная группа: она читает то, до чего дотягивается база, а не то, что
+		перечислено в белых списках инфоблоков. Отменить её действие настройками
+		каталога нельзя.<br>
+		Что не пройдёт: всё, кроме <code>SELECT</code> и <code>WITH</code>; вторая
+		инструкция через точку с запятой; <code>INTO OUTFILE</code>,
+		<code>LOAD_FILE</code>, <code>SLEEP</code>, <code>BENCHMARK</code>,
+		<code>GET_LOCK</code>; база <code>mysql</code> и список процессов. Число строк
+		ограничено, предел навешивает ядро Битрикса, а не подстановка в текст запроса.<br>
+		Всегда закрыты <code>b_user</code> (хеши паролей и контрольные слова),
+		<code>b_option</code> (ключи модулей, пароли SMTP и эквайринга), таблицы
+		авторизации и таблица токенов самого модуля. <b>Белый список их не открывает.</b>
+		Данные покупателей читаются инструментом <code>user_get</code> из группы заказов.<br>
+		⚠️ Всё остальное содержимое базы этой группе доступно. По умолчанию выключена.
 	</td></tr>
 	<?php if ($canWrite): ?>
 	<tr><td>&nbsp;</td><td><button type="submit" name="act" value="save">Сохранить</button></td></tr>
