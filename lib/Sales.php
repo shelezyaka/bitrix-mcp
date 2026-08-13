@@ -59,8 +59,16 @@ class Sales
 			$orders += $cnt;
 			$sum    += $val;
 
+			// DATE() возвращается объектом даты и приводится к формату сайта.
+			// Ярлыки периодов держим в одном виде: 2026-08-06, 2026-32, 2026-08.
+			$period = $r['PERIOD'];
+			if ($period instanceof \Bitrix\Main\Type\Date
+				|| $period instanceof \Bitrix\Main\Type\DateTime) {
+				$period = $period->format('Y-m-d');
+			}
+
 			$rows[] = [
-				'period'      => (string)$r['PERIOD'],
+				'period'      => (string)$period,
 				'orders'      => $cnt,
 				'sum'         => round($val, 2),
 				'avg_check'   => $cnt > 0 ? round($val / $cnt, 2) : 0,

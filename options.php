@@ -230,7 +230,7 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 						placeholder="инфоблоки: все">
 				</td>
 				<td style="white-space:nowrap"><?php if ($canWrite): ?>
-					<button type="submit" name="act" value="rights:<?php echo $tid; ?>">права</button>
+					<button type="submit" name="act" value="rights:<?php echo $tid; ?>">изменить</button>
 					<button type="submit" name="act" value="revoke:<?php echo $tid; ?>">отозвать</button>
 					<button type="submit" name="act" value="drop:<?php echo $tid; ?>">удалить</button>
 				<?php endif; ?></td>
