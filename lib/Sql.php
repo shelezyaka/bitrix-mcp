@@ -11,9 +11,11 @@ namespace Itb\Mcp;
  */
 class Sql
 {
-	const ROWS_DEF = 100;
-	const ROWS_MAX = 1000;
-	const OPT      = 'sql_tables';
+	const ROWS_DEF  = 100;
+	const ROWS_MAX  = 1000;
+	const MAX_BYTES = 524288;
+	const SECONDS   = 10;
+	const OPT       = 'sql_tables';
 
 	/**
 	 * Таблицы, закрытые всегда: белый список их не открывает, потому что в них
@@ -31,15 +33,27 @@ class Sql
 
 	/** Конструкции, которые выводят SELECT за пределы чтения. */
 	const DENY_WORDS = [
-		'into outfile'  => 'запись файла на диск',
-		'into dumpfile' => 'запись файла на диск',
-		'load_file'     => 'чтение файла с диска',
-		'sleep'         => 'удержание соединения',
-		'benchmark'     => 'нагрузка на сервер',
-		'get_lock'      => 'блокировка',
-		'release_lock'  => 'блокировка',
-		'processlist'   => 'запросы других пользователей базы',
-		'mysql.'        => 'служебная база mysql',
+		'into outfile'       => 'запись файла на диск',
+		'into dumpfile'      => 'запись файла на диск',
+		'load_file'          => 'чтение файла с диска',
+		'sleep'              => 'удержание соединения',
+		'benchmark'          => 'нагрузка на сервер',
+		'get_lock'           => 'блокировка',
+		'release_lock'       => 'блокировка',
+		// SELECT умеет блокировать строки и двигать счётчики — это уже не чтение,
+		// и на работающем магазине такой запрос встанет поперёк оформления заказа.
+		'for update'         => 'блокировка строк',
+		'for share'          => 'блокировка строк',
+		'lock in share mode' => 'блокировка строк',
+		'nextval'            => 'сдвиг последовательности',
+		'setval'             => 'сдвиг последовательности',
+		'mysql.'             => 'служебная база mysql',
+		// Здесь лежат тексты чужих запросов вместе со значениями: пароль,
+		// введённый администратором минуту назад, читается как обычная строка.
+		'processlist'        => 'запросы других соединений',
+		'innodb_trx'         => 'запросы других соединений',
+		'performance_schema.' => 'история запросов сервера',
+		'sys.'               => 'служебные представления сервера',
 	];
 
 	/**
@@ -105,15 +119,30 @@ class Sql
 		return null;
 	}
 
-	/** Таблицы после FROM и JOIN. Подзапросы «FROM (SELECT …)» пропускаются. */
+	/**
+	 * Таблицы после FROM и JOIN, включая перечисление через запятую.
+	 *
+	 * «FROM a, b» — это тоже соединение, и если брать только первое имя, вторая
+	 * таблица проходит мимо белого списка. Подзапросы «FROM (SELECT …)» сюда не
+	 * попадают: их собственный FROM разбирается отдельным совпадением.
+	 */
 	public static function tablesIn(string $sql): array
 	{
-		preg_match_all('~\b(?:from|join)\s+`?([a-zA-Z0-9_.]+)`?~i', $sql, $m);
+		$stop = 'where|on|using|group|order|limit|having|union|set|inner|left|right|'
+			. 'cross|outer|straight_join|join|for|into|window|procedure';
+
+		// Скобка обрывает перечисление: за ней либо подзапрос, либо его конец.
+		preg_match_all('~\b(?:from|join|straight_join)\s+([^()]*?)(?=[()]|\s+\b(?:' . $stop . ')\b|$)~i',
+			$sql, $m);
 
 		$out = [];
-		foreach ($m[1] as $name) {
-			$name = strtolower($name);
-			if ($name !== '' && !in_array($name, $out, true)) { $out[] = $name; }
+		foreach ($m[1] as $clause) {
+			foreach (explode(',', $clause) as $part) {
+				// В куске «b_iblock i» имя таблицы — первое слово, остальное псевдоним.
+				if (!preg_match('~^\s*`?([a-zA-Z0-9_.]+)`?~', $part, $one)) { continue; }
+				$name = strtolower($one[1]);
+				if ($name !== '' && !in_array($name, $out, true)) { $out[] = $name; }
+			}
 		}
 
 		return $out;
@@ -125,9 +154,12 @@ class Sql
 	 */
 	public static function declaredLimit(string $sql): ?int
 	{
-		if (!preg_match('~\blimit\s+(\d+)(?:\s*,\s*(\d+))?\s*$~i', $sql, $m)) { return null; }
+		// Три записи: LIMIT n, LIMIT смещение, n и LIMIT n OFFSET m. Пропустить
+		// последнюю значило бы навесить второй LIMIT и получить ошибку синтаксиса.
+		if (preg_match('~\blimit\s+(\d+)\s*,\s*(\d+)\s*$~i', $sql, $m)) { return (int)$m[2]; }
+		if (preg_match('~\blimit\s+(\d+)(?:\s+offset\s+\d+)?\s*$~i', $sql, $m)) { return (int)$m[1]; }
 
-		return isset($m[2]) ? (int)$m[2] : (int)$m[1];
+		return null;
 	}
 
 	public static function select(array $a): array
@@ -145,7 +177,9 @@ class Sql
 			throw new ToolError('LIMIT в запросе больше предела ' . self::ROWS_MAX . '.');
 		}
 
-		$conn  = \Bitrix\Main\Application::getConnection();
+		$conn = \Bitrix\Main\Application::getConnection();
+		self::deadline($conn);
+
 		$start = microtime(true);
 		try {
 			// Предел навешивает ядро (getTopSql), а не подстановка в текст запроса.
@@ -154,8 +188,17 @@ class Sql
 			throw new ToolError('Запрос не выполнен: ' . $e->getMessage());
 		}
 
-		$out = [];
-		while ($r = $res->fetch()) { $out[] = self::flatten($r); }
+		$out   = [];
+		$bytes = 0;
+		$cut   = false;
+		while ($r = $res->fetch()) {
+			$row = self::flatten($r);
+			// Предел по объёму, а не только по строкам: тысяча строк с текстом
+			// описания — это десятки мегабайт в ответе.
+			$bytes += strlen((string)json_encode($row, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+			if ($bytes > self::MAX_BYTES) { $cut = true; break; }
+			$out[] = $row;
+		}
 
 		$result = [
 			'rows'    => count($out),
@@ -163,7 +206,11 @@ class Sql
 			'columns' => $out ? array_keys($out[0]) : [],
 			'data'    => $out,
 		];
-		if ($own === null && count($out) >= $rows) {
+
+		if ($cut) {
+			$result['note'] = 'Обрыв по объёму ответа: показано ' . count($out)
+				. ' строк. Уберите лишние колонки или сузьте отбор.';
+		} elseif ($own === null && count($out) >= $rows) {
 			$result['note'] = 'Показаны первые ' . $rows . ' строк — предел выборки, а не конец данных.';
 		}
 
@@ -218,6 +265,21 @@ class Sql
 		return ['total' => count($out), 'tables' => $out,
 			'note' => 'rows_estimate — оценка, а не точный счёт. Колонки таблицы — тот же'
 				. ' инструмент с параметром name.'];
+	}
+
+	/**
+	 * Предел времени на запрос — средствами сервера, а не переписыванием текста.
+	 *
+	 * Имена настроек у MySQL и MariaDB разные, на старых версиях их нет вовсе,
+	 * поэтому пробуем обе и молчим при отказе: без предела запрос всё равно
+	 * выполнится, просто дольше.
+	 */
+	private static function deadline($conn): void
+	{
+		foreach (['SET SESSION MAX_EXECUTION_TIME=' . (self::SECONDS * 1000),
+			'SET SESSION max_statement_time=' . self::SECONDS] as $sql) {
+			try { $conn->query($sql); return; } catch (\Throwable $e) {}
+		}
 	}
 
 	/** Белый список из настроек; пустой — ограничения нет. */

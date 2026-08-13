@@ -469,10 +469,10 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			?>
 			<tr class="heading">
 				<td>Когда</td><td>Токен</td><td>IP</td><td>Метод</td><td>Инструмент</td>
-				<td>Код</td><td>мс</td><td>Ответ</td><td>Ошибка</td>
+				<td>С чем позвали</td><td>Код</td><td>мс</td><td>Ответ</td><td>Ошибка</td>
 			</tr>
 			<?php if (!$log): ?>
-				<tr><td colspan="9" style="text-align:center;color:#777">Обращений ещё не было</td></tr>
+				<tr><td colspan="10" style="text-align:center;color:#777">Обращений ещё не было</td></tr>
 			<?php endif; ?>
 			<?php foreach ($log as $l):
 				$ltid = (int)$l['TOKEN_ID']; ?>
@@ -489,6 +489,15 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 				<td><?php echo htmlspecialcharsbx((string)$l['IP']); ?></td>
 				<td><?php echo htmlspecialcharsbx((string)$l['RPC_METHOD']); ?></td>
 				<td><?php echo htmlspecialcharsbx((string)$l['TOOL']); ?></td>
+				<?php
+				// Аргументы вызова пишутся в журнал давно, но видно их не было.
+				// Для группы sql это единственное место, где виден сам запрос.
+				$args = (string)$l['ARGS'];
+				?>
+				<td style="font-size:11px;max-width:340px;overflow:hidden"
+					title="<?php echo htmlspecialcharsbx($args); ?>"><?php
+					echo htmlspecialcharsbx(mb_substr($args, 0, 120))
+						. (mb_strlen($args) > 120 ? '…' : ''); ?></td>
 				<td<?php echo (int)$l['HTTP_STATUS'] >= 400 ? ' style="color:#c0392b"' : ''; ?>><?php
 					echo (int)$l['HTTP_STATUS']; ?></td>
 				<td><?php echo (int)$l['MS']; ?></td>

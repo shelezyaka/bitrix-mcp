@@ -74,10 +74,18 @@ mayNot('SELECT LOAD_FILE("/etc/passwd")');
 mayNot('SELECT SLEEP(30)');
 mayNot('SELECT BENCHMARK(100000000, MD5("x"))');
 mayNot('SELECT GET_LOCK("x", 100)');
+// В этих представлениях лежат тексты чужих запросов вместе со значениями.
 mayNot('SELECT * FROM information_schema.PROCESSLIST');
+mayNot('SELECT * FROM information_schema.INNODB_TRX');
+mayNot('SELECT * FROM performance_schema.events_statements_history');
+mayNot('SELECT * FROM sys.session');
 mayNot('SELECT * FROM mysql.user');
 // Комментарий внутри конструкции не должен её маскировать.
 mayNot('SELECT * FROM b_iblock INTO/**/OUTFILE "/tmp/x"');
+// Блокирующее чтение встанет поперёк оформления заказов на работающем магазине.
+mayNot('SELECT * FROM b_sale_order FOR UPDATE');
+mayNot('SELECT * FROM b_sale_order LOCK IN SHARE MODE');
+mayNot('SELECT NEXTVAL(my_seq)');
 
 echo "=== закрытые таблицы ===\n";
 mayNot('SELECT * FROM b_user');
@@ -98,6 +106,14 @@ may('SELECT * FROM b_iblock', ['b_iblock', 'b_iblock_element']);
 may('SELECT * FROM b_iblock_element e JOIN b_iblock i ON i.ID = e.IBLOCK_ID', ['b_iblock', 'b_iblock_element']);
 mayNot('SELECT * FROM b_sale_order', ['b_iblock']);
 mayNot('SELECT * FROM b_iblock UNION SELECT * FROM b_sale_order', ['b_iblock']);
+// Соединение через запятую — тоже соединение: вторая таблица не должна
+// проскочить мимо белого списка.
+mayNot('SELECT * FROM b_iblock, b_sale_order', ['b_iblock']);
+mayNot('SELECT * FROM b_iblock i, b_sale_order o WHERE i.ID = o.ID', ['b_iblock']);
+mayNot('SELECT * FROM b_iblock STRAIGHT_JOIN b_sale_order', ['b_iblock']);
+mayNot('SELECT * FROM b_iblock WHERE ID IN (SELECT ID FROM b_sale_order)', ['b_iblock']);
+mayNot('SELECT * FROM b_iblock LEFT JOIN b_sale_order o ON o.ID = 1', ['b_iblock']);
+may('SELECT * FROM b_iblock, b_iblock_element', ['b_iblock', 'b_iblock_element']);
 // Закрытая таблица закрыта и тогда, когда её вписали в белый список.
 mayNot('SELECT * FROM b_user', ['b_user']);
 
@@ -108,8 +124,15 @@ is_('таблицы из FROM и JOIN',
 is_('подзапрос не считается таблицей',
 	Sql::tablesIn('SELECT * FROM (SELECT ID FROM b_iblock) t'), ['b_iblock']);
 is_('обратные кавычки', Sql::tablesIn('SELECT * FROM `b_iblock`'), ['b_iblock']);
+is_('перечисление через запятую',
+	Sql::tablesIn('SELECT * FROM b_iblock, b_sale_order'), ['b_iblock', 'b_sale_order']);
+is_('запятая с псевдонимами',
+	Sql::tablesIn('SELECT * FROM b_iblock i, b_sale_order o WHERE i.ID = o.ID'),
+	['b_iblock', 'b_sale_order']);
+is_('LEFT JOIN', Sql::tablesIn('SELECT * FROM a LEFT JOIN b ON b.ID = a.ID'), ['a', 'b']);
 is_('свой лимит', Sql::declaredLimit('SELECT * FROM b_iblock LIMIT 10'), 10);
 is_('лимит со сдвигом', Sql::declaredLimit('SELECT * FROM b_iblock LIMIT 100, 20'), 20);
+is_('лимит с OFFSET', Sql::declaredLimit('SELECT * FROM b_iblock LIMIT 10 OFFSET 100'), 10);
 is_('лимита нет', Sql::declaredLimit('SELECT * FROM b_iblock'), null);
 is_('limit в середине не считается', Sql::declaredLimit('SELECT * FROM b_iblock WHERE NAME = "limit 5"'), null);
 
