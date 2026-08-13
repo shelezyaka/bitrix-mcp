@@ -221,7 +221,8 @@ class Orders
 		];
 	}
 
-	private static function init(): void
+	/** Публичные: тем же входом и той же разбивкой дат пользуется Sales. */
+	public static function init(): void
 	{
 		if (!\Bitrix\Main\Loader::includeModule('sale')) {
 			throw new ToolError('Модуль sale на этом сайте не подключён');
@@ -235,7 +236,7 @@ class Orders
 	 * $next — сдвинуть на сутки вперёд: «по такое-то число» человек понимает
 	 * включительно, а сравнение идёт строгим «меньше».
 	 */
-	private static function date(string $raw, bool $next): \Bitrix\Main\Type\DateTime
+	public static function date(string $raw, bool $next): \Bitrix\Main\Type\DateTime
 	{
 		$raw = trim($raw);
 		if (!preg_match('~^(\d{2})\.(\d{2})\.(\d{4})$~', $raw, $m)

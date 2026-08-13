@@ -14,6 +14,7 @@ class Tools
 		'catalog' => 'Каталог: поиск элементов, карточка, разделы, цены и остатки',
 		'orders'  => 'Заказы: список, сводка, заказ целиком, покупатели — с их данными',
 		'api'     => 'Разведка API: классы, сущности, исходники, события, агенты',
+		'reports' => 'Отчёты: динамика продаж, топ товаров, брошенные корзины — без данных покупателей',
 		'files'   => 'Файлы: чтение и поиск по коду в local, шаблонах и lib модулей',
 		'sql'     => 'SQL: произвольный SELECT к базе сайта',
 	];
@@ -22,6 +23,7 @@ class Tools
 	const GROUP_SHORT = [
 		'catalog' => 'каталог',
 		'orders'  => 'заказы',
+		'reports' => 'отчёты',
 		'api'     => 'API',
 		'files'   => 'файлы',
 		'sql'     => 'SQL',
@@ -110,7 +112,8 @@ class Tools
 		// Разведка API не зависит от белого списка инфоблоков: она про устройство
 		// кода, а не про данные.
 		$out = ['site' => $site, 'api' => self::apiTools(), 'orders' => self::orderTools(),
-			'files' => self::fileTools(), 'sql' => self::sqlTools(), 'catalog' => []];
+			'reports' => self::reportTools(), 'files' => self::fileTools(),
+			'sql' => self::sqlTools(), 'catalog' => []];
 
 		// Инструменты чтения появляются, только если что-то открыто: иначе модель
 		// зовёт их и получает отказ на каждый вызов.
@@ -317,6 +320,76 @@ class Tools
 					],
 				],
 				[Users::class, 'get']
+			),
+		];
+	}
+
+	/**
+	 * Отчёты по продажам. Отдельно от заказов: здесь только итоги, персональных
+	 * данных нет, и группу можно выдать тому, кому карточки заказов не нужны.
+	 *
+	 * @return Tool[]
+	 */
+	private static function reportTools(): array
+	{
+		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'reports', 'N') !== 'Y') { return []; }
+		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('sale')) { return []; }
+
+		$dates = [
+			'from' => ['type' => 'string', 'description' => 'Начало периода, ДД.ММ.ГГГГ'],
+			'to'   => ['type' => 'string', 'description' => 'Конец периода, ДД.ММ.ГГГГ (включительно)'],
+		];
+
+		return [
+			new Tool(
+				'sales_report',
+				'Динамика продаж',
+				'Заказы и выручка по дням, неделям или месяцам: сумма, средний чек,'
+				. ' сколько оплачено. Отменённые не учитываются, пока не попросят.'
+				. "\n" . 'Отвечает на «как идут продажи» — это ряд, а не одно число.'
+				. ' Итог за период одним числом даёт order_stats.',
+				[
+					'type' => 'object',
+					'properties' => $dates + [
+						'by' => ['type' => 'string', 'enum' => ['day', 'week', 'month'],
+							'description' => 'Шаг, по умолчанию day'],
+						'with_canceled' => ['type' => 'boolean',
+							'description' => 'Учитывать отменённые заказы'],
+					],
+				],
+				[Sales::class, 'report']
+			),
+			new Tool(
+				'top_products',
+				'Топ товаров',
+				'Что продавалось за период: количество, выручка и в скольких заказах.'
+				. ' Считается по составу корзин, то есть по фактическим ценам со скидками.',
+				[
+					'type' => 'object',
+					'properties' => $dates + [
+						'sort'  => ['type' => 'string', 'enum' => ['revenue', 'quantity'],
+							'description' => 'Сортировка, по умолчанию revenue'],
+						'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => Sales::TOP_MAX,
+							'description' => 'Сколько позиций, по умолчанию ' . Sales::TOP_DEF],
+						'with_canceled' => ['type' => 'boolean',
+							'description' => 'Учитывать отменённые заказы'],
+					],
+				],
+				[Sales::class, 'topProducts']
+			),
+			new Tool(
+				'abandoned_carts',
+				'Брошенные корзины',
+				'Корзины, не ставшие заказами: сколько их, на какую сумму и что в них'
+				. ' чаще всего остаётся. Отложенное и недоступное к покупке не в счёт.',
+				[
+					'type' => 'object',
+					'properties' => $dates + [
+						'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => Sales::TOP_MAX,
+							'description' => 'Сколько позиций в списке, по умолчанию ' . Sales::TOP_DEF],
+					],
+				],
+				[Sales::class, 'abandoned']
 			),
 		];
 	}

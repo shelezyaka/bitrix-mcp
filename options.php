@@ -59,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			Option::set($module_id, 'rate_limit', max(0, (int)($_POST['rate_limit'] ?? 120)));
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
+			Option::set($module_id, 'reports', empty($_POST['reports']) ? 'N' : 'Y');
 			Option::set($module_id, 'files', empty($_POST['files']) ? 'N' : 'Y');
 			// Папки нормализуем тем же разбором, что и проверка пути: в настройке
 			// должно лежать ровно то, что будет действовать.
@@ -403,6 +404,21 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		целиком. Они уйдут в ответ, а значит
 		за пределы сайта — модели и туда, где эта переписка хранится. Включайте, только
 		если понимаете, зачем это нужно, и помните про 152-ФЗ. По умолчанию выключено.
+	</td></tr>
+	<tr class="heading"><td colspan="2">Отчёты по продажам</td></tr>
+	<tr>
+		<td>Разрешить отчёты:</td>
+		<td><input type="checkbox" name="reports" value="Y"<?php
+			echo Option::get($module_id, 'reports', 'N') === 'Y' ? ' checked' : '';
+			echo $hasSale ? '' : ' disabled'; ?>>
+			добавляет <code>sales_report</code>, <code>top_products</code>,
+			<code>abandoned_carts</code></td>
+	</tr>
+	<tr><td colspan="2" style="color:#777">
+		Динамика заказов по дням, неделям и месяцам, что продавалось и что осталось
+		в брошенных корзинах. <b>Персональных данных здесь нет</b> — только итоги,
+		поэтому группу можно выдать тому, кому карточки заказов открывать не нужно.
+		Выручка считается по ценам в корзине, то есть со скидками.
 	</td></tr>
 	<tr class="heading"><td colspan="2">Разведка API</td></tr>
 	<tr>
