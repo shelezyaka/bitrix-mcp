@@ -209,7 +209,7 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 					<?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label): ?>
 					<label title="<?php echo htmlspecialcharsbx($label); ?>"><input type="checkbox"
 						name="g[<?php echo $tid; ?>][]" value="<?php echo htmlspecialcharsbx($key); ?>"<?php
-						echo ($gr === null || in_array($key, $gr, true)) ? ' checked' : ''; ?>>
+						echo in_array($key, $gr, true) ? ' checked' : ''; ?>>
 						<?php echo htmlspecialcharsbx(\Itb\Mcp\Tools::GROUP_SHORT[$key] ?? $key); ?></label>
 					<?php endforeach; ?>
 					<br><input type="text" name="ib_tok[<?php echo $tid; ?>]" size="16"
@@ -224,6 +224,10 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			</tr>
 			<?php endforeach; ?>
 		</table>
+		<p style="color:#777">Права выдаются перечислением: сняты все галки — токену доступен
+			только <code>site_info</code>. Поэтому включение новой группы в настройках
+			<b>не расширяет</b> уже выданные токены — её нужно отметить здесь и нажать
+			«права».</p>
 	</td></tr>
 	<?php if ($canWrite): ?>
 	<tr class="heading"><td colspan="2">Выпустить токен</td></tr>

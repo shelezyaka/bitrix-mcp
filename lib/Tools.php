@@ -28,14 +28,14 @@ class Tools
 	];
 
 	/**
-	 * @param string[]|null $groups null — все группы, разрешённые настройкой сайта
+	 * @param string[] $groups группы, выданные токену; пусто — только site_info
 	 */
-	public static function build(?array $groups = null): Registry
+	public static function build(array $groups = []): Registry
 	{
 		$reg = new Registry();
 
 		$has = static function (string $g) use ($groups) {
-			return $groups === null || in_array($g, $groups, true);
+			return in_array($g, $groups, true);
 		};
 
 		foreach (self::all() as $group => $tools) {
