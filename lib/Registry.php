@@ -10,6 +10,8 @@ class Registry
 	/** @var Tool[] */
 	private $tools = [];
 	private $instructions = '';
+	/** @var string[] группы, выданные токену — по ним отбираются сценарии */
+	private $groups = [];
 
 	public function add(Tool $t): self
 	{
@@ -44,5 +46,17 @@ class Registry
 	public function names(): array
 	{
 		return array_keys($this->tools);
+	}
+
+	public function setGroups(array $groups): self
+	{
+		$this->groups = $groups;
+		return $this;
+	}
+
+	/** @return string[] */
+	public function groups(): array
+	{
+		return $this->groups;
 	}
 }

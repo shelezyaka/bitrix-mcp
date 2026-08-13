@@ -194,6 +194,30 @@ is_('GET отвергается до счётчика', $callT($H, '', $always, 
 is_('чужой Origin — до счётчика',
 	$callT($H + ['Origin' => 'https://evil.example'], [], $always)['status'], 403);
 
+echo "\n=== Сценарии в протоколе ===\n";
+require $lib . 'Prompts.php';
+$reg->setGroups(['reports']);
+$rq = static function (string $method, array $params = []) use ($reg) {
+	return Protocol::dispatch(['jsonrpc' => '2.0', 'id' => 7, 'method' => $method,
+		'params' => $params], $reg);
+};
+
+is_('prompts объявлены в capabilities',
+	isset($rq('initialize')['result']['capabilities']['prompts']), true);
+is_('prompts/list отдаёт список',
+	count($rq('prompts/list')['result']['prompts']), 4);
+is_('prompts/get отдаёт сообщение',
+	$rq('prompts/get', ['name' => 'yesterday'])['result']['messages'][0]['role'], 'user');
+is_('чужой сценарий — ошибка протокола',
+	$rq('prompts/get', ['name' => 'order_trace'])['error']['code'], Protocol::E_PARAMS);
+is_('без имени — ошибка протокола',
+	$rq('prompts/get')['error']['code'], Protocol::E_PARAMS);
+
+// Права токена действуют и здесь: без групп сценариев нет вовсе.
+$reg->setGroups([]);
+is_('без прав список пуст', $rq('prompts/list')['result']['prompts'], []);
+is_('и выдать нечего', $rq('prompts/get', ['name' => 'yesterday'])['error']['code'], Protocol::E_PARAMS);
+
 echo "\n=== Разбор ответа для журнала ===\n";
 // Server::failure — единственная часть стыка с Битриксом, которую можно проверить
 // отдельно. Именно здесь был фатал: ping отвечает объектом «{}», а разбирали его

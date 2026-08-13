@@ -262,7 +262,7 @@ class Sql
 	 * поэтому пробуем обе и молчим при отказе: без предела запрос всё равно
 	 * выполнится, просто дольше.
 	 */
-	private static function deadline($conn): void
+	public static function deadline($conn): void
 	{
 		foreach (['SET SESSION MAX_EXECUTION_TIME=' . (self::SECONDS * 1000),
 			'SET SESSION max_statement_time=' . self::SECONDS] as $sql) {

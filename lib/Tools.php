@@ -37,6 +37,9 @@ class Tools
 		$reg = new Registry();
 
 		foreach (self::pick(self::all(), $groups) as $tool) { $reg->add($tool); }
+		// Сценарии отбираются по тем же группам: предлагать то, чего нельзя
+		// вызвать, — обман.
+		$reg->setGroups($groups);
 
 		$open = Expose::ids();
 		$reg->setInstructions(
@@ -340,7 +343,7 @@ class Tools
 			'to'   => ['type' => 'string', 'description' => 'Конец периода, ДД.ММ.ГГГГ (включительно)'],
 		];
 
-		return [
+		$tools = [
 			new Tool(
 				'sales_report',
 				'Динамика продаж',
@@ -392,6 +395,53 @@ class Tools
 				[Sales::class, 'abandoned']
 			),
 		];
+
+		$window = ['days' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 365,
+			'description' => 'За сколько дней смотреть'],
+			'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => Stock::LIMIT_MAX,
+				'description' => 'Сколько позиций, по умолчанию ' . Stock::LIMIT_DEF]];
+
+		// Остатки живут в модуле catalog: без него складских отчётов не бывает.
+		if (\Bitrix\Main\ModuleManager::isModuleInstalled('catalog')) {
+			$tools[] = new Tool(
+				'slow_movers',
+				'Неликвиды',
+				'Товары с остатком, которые не продавались за период: сколько лежит'
+				. ' и на какую сумму по базовой цене. Отсортированы по стоимости остатка —'
+				. ' сверху то, где заморожено больше денег.',
+				['type' => 'object', 'properties' => $window],
+				[Stock::class, 'slowMovers']
+			);
+			$tools[] = new Tool(
+				'low_stock',
+				'Заканчивается',
+				'Товары, которых продано больше, чем осталось на складе: продажи за период,'
+				. ' текущий остаток и на сколько дней его хватит при том же спросе.',
+				['type' => 'object', 'properties' => $window],
+				[Stock::class, 'lowStock']
+			);
+		}
+
+		// Статистику поиска ведёт модуль search; на редакциях без него таблицы нет.
+		if (\Bitrix\Main\ModuleManager::isModuleInstalled('search')) {
+			$tools[] = new Tool(
+				'search_phrases',
+				'Поисковые запросы',
+				'Что искали на сайте: фраза, сколько раз и сколько нашлось.'
+				. ' С no_results — только фразы, по которым не нашлось ничего:'
+				. ' это спрос, на который сайт не отвечает.',
+				[
+					'type' => 'object',
+					'properties' => $window + [
+						'no_results' => ['type' => 'boolean',
+							'description' => 'Только фразы без результатов'],
+					],
+				],
+				[Stock::class, 'searchPhrases']
+			);
+		}
+
+		return $tools;
 	}
 
 	/**

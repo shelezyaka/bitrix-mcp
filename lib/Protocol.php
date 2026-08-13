@@ -44,6 +44,8 @@ class Protocol
 			case 'ping':       return self::ok($id, new \stdClass());
 			case 'tools/list': return self::ok($id, ['tools' => $reg->schema()]);
 			case 'tools/call': return self::call($id, $params, $reg);
+			case 'prompts/list': return self::ok($id, ['prompts' => Prompts::schema($reg->groups())]);
+			case 'prompts/get': return self::prompt($id, $params, $reg);
 		}
 
 		return self::err($id, self::E_METHOD, 'Метод не поддерживается: ' . $method);
@@ -58,7 +60,10 @@ class Protocol
 		return [
 			'protocolVersion' => $use,
 			// listChanged=false: соединения между вызовами не держим, уведомить не о чем.
-			'capabilities' => ['tools' => ['listChanged' => false]],
+			'capabilities' => [
+				'tools'   => ['listChanged' => false],
+				'prompts' => ['listChanged' => false],
+			],
 			'serverInfo'   => ['name' => self::NAME, 'title' => self::TITLE, 'version' => self::VERSION],
 			'instructions' => $reg->instructions(),
 		];
@@ -95,6 +100,18 @@ class Protocol
 		}
 
 		return self::ok($id, self::result($res));
+	}
+
+	/** Готовый сценарий. Неизвестный или не выданный токену — ошибка протокола. */
+	private static function prompt($id, array $params, Registry $reg): array
+	{
+		$name = (string)($params['name'] ?? '');
+		$args = isset($params['arguments']) && is_array($params['arguments']) ? $params['arguments'] : [];
+
+		$out = Prompts::get($name, $args, $reg->groups());
+		if ($out === null) { return self::err($id, self::E_PARAMS, 'Неизвестный сценарий: ' . $name); }
+
+		return self::ok($id, $out);
 	}
 
 	/** Структурированный результат дублируется текстом — требование спецификации. */

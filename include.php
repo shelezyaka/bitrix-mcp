@@ -20,6 +20,8 @@
 	'Itb\\Mcp\\Catalog'   => 'lib/Catalog.php',
 	'Itb\\Mcp\\Orders'    => 'lib/Orders.php',
 	'Itb\\Mcp\\Sales'     => 'lib/Sales.php',
+	'Itb\\Mcp\\Stock'     => 'lib/Stock.php',
+	'Itb\\Mcp\\Prompts'   => 'lib/Prompts.php',
 	'Itb\\Mcp\\Users'     => 'lib/Users.php',
 	'Itb\\Mcp\\Path'      => 'lib/Path.php',
 	'Itb\\Mcp\\Files'     => 'lib/Files.php',
