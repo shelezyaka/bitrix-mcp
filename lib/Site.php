@@ -58,7 +58,7 @@ class Site
 			foreach (\Bitrix\Main\EventManager::getInstance()->findEventHandlers($module, $event) as $x) {
 				$live[] = [
 					'handler' => self::callable($x),
-					'file'    => (string)($x['TO_PATH'] ?? ''),
+					'file'    => self::where($x),
 					'by'      => (string)($x['TO_MODULE_ID'] ?? ''),
 					'sort'    => (int)($x['SORT'] ?? 0),
 					'source'  => empty($x['TO_MODULE_ID']) ? 'код (init.php)' : 'регистрация',
@@ -160,14 +160,63 @@ class Site
 			'note' => 'Строки highload-блока читаются из его таблицы инструментом sql_select.'];
 	}
 
-	/** Класс::метод, файл или просто функция — как записан обработчик. */
+	/**
+	 * Имя обработчика.
+	 *
+	 * У постоянной регистрации это TO_CLASS и TO_METHOD, а у навешенного кодом —
+	 * CALLBACK: класса с методом там нет вовсе, и без разбора самого callback
+	 * самый интересный обработчик выглядел бы пустой строкой.
+	 */
 	private static function callable(array $r): string
 	{
+		$name = trim((string)($r['TO_NAME'] ?? ''));
+		if ($name !== '') { return $name; }
+
 		$class  = (string)($r['TO_CLASS'] ?? '');
 		$method = (string)($r['TO_METHOD'] ?? '');
+		if ($class !== '' || $method !== '') {
+			return $class !== '' && $method !== '' ? $class . '::' . $method : $class . $method;
+		}
 
-		if ($class !== '' && $method !== '') { return $class . '::' . $method; }
+		$cb = $r['CALLBACK'] ?? null;
+		if (is_string($cb)) { return $cb; }
+		if ($cb instanceof \Closure) { return 'замыкание'; }
+		if (is_array($cb) && count($cb) === 2) {
+			return (is_object($cb[0]) ? get_class($cb[0]) : (string)$cb[0]) . '::' . (string)$cb[1];
+		}
 
-		return $method !== '' ? $method : $class;
+		return 'не определён';
+	}
+
+	/** Файл обработчика: у навешенного кодом его знает только сам callback. */
+	private static function where(array $r): string
+	{
+		$path = trim((string)($r['TO_PATH'] ?? ''));
+		if ($path === '') { $path = trim((string)($r['FULL_PATH'] ?? '')); }
+		if ($path !== '') { return self::relative($path); }
+
+		$cb = $r['CALLBACK'] ?? null;
+		try {
+			if ($cb instanceof \Closure || (is_string($cb) && function_exists($cb))) {
+				$f = new \ReflectionFunction($cb);
+			} elseif (is_array($cb) && count($cb) === 2) {
+				$f = new \ReflectionMethod(is_object($cb[0]) ? get_class($cb[0]) : (string)$cb[0],
+					(string)$cb[1]);
+			} else {
+				return '';
+			}
+
+			return self::relative((string)$f->getFileName()) . ':' . $f->getStartLine();
+		} catch (\Throwable $e) {
+			return '';
+		}
+	}
+
+	private static function relative(string $file): string
+	{
+		$root = str_replace('\\', '/', (string)\Bitrix\Main\Application::getDocumentRoot());
+		$file = str_replace('\\', '/', $file);
+
+		return $root !== '' && strpos($file, $root) === 0 ? substr($file, strlen($root)) : $file;
 	}
 }
