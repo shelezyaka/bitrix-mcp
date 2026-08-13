@@ -525,7 +525,7 @@ class Tools
 	{
 		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'api', 'N') !== 'Y') { return []; }
 
-		return [
+		$tools = [
 			new Tool(
 				'api_modules',
 				'Модули Битрикса',
@@ -648,15 +648,22 @@ class Tools
 				],
 				[Site::class, 'agents']
 			),
-			new Tool(
+		];
+
+		// Highload-блоки есть не во всех редакциях: без модуля инструмент не
+		// показываем, иначе модель зовёт его и получает отказ.
+		if (\Bitrix\Main\ModuleManager::isModuleInstalled('highloadblock')) {
+			$tools[] = new Tool(
 				'hl_list',
 				'Highload-блоки',
 				'Highload-блоки и состав их полей: имя, таблица, коды и типы полей.'
 				. ' Сами строки читаются из этой таблицы инструментом sql_select.',
 				['type' => 'object', 'properties' => new \stdClass()],
 				[Site::class, 'hlBlocks']
-			),
-		];
+			);
+		}
+
+		return $tools;
 	}
 
 	/**

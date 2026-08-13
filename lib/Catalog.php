@@ -95,6 +95,14 @@ class Catalog
 		$out['prices'] = self::prices([$id])[$id] ?? [];
 		$out['stores'] = self::stocks([$id])[$id] ?? [];
 
+		// Пустой список складов легко прочитать как «товара нет» — поэтому
+		// говорим прямо, что остаток в этом случае один и он выше.
+		if (!$out['stores']) {
+			$out['stores_note'] = self::inventory() === false
+				? 'Складской учёт не ведётся: остаток товара — quantity выше.'
+				: 'По складам остатков нет; общий остаток — quantity выше.';
+		}
+
 		if ($type === 3 || $type === 6) {
 			$out['offers'] = self::offers($id, $iblock);
 		}
@@ -104,6 +112,27 @@ class Catalog
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Складской учёт включён? null — версия ядра ответить не умеет.
+	 *
+	 * Многоскладовость есть не во всех редакциях и выключается настройкой.
+	 * Когда её нет, остаток у товара один — b_catalog_product.QUANTITY,
+	 * и пустой список складов означает «не ведётся», а не «нет товара».
+	 */
+	public static function inventory(): ?bool
+	{
+		$class = '\Bitrix\Catalog\Config\State';
+		if (!class_exists($class) || !method_exists($class, 'isUsedInventoryManagement')) {
+			return null;
+		}
+
+		try {
+			return (bool)$class::isUsedInventoryManagement();
+		} catch (\Throwable $e) {
+			return null;
+		}
 	}
 
 	/** Склады: без них остатки — набор идентификаторов без смысла. */
@@ -128,7 +157,17 @@ class Catalog
 			];
 		}
 
-		return ['total' => count($out), 'stores' => $out];
+		$inventory = self::inventory();
+
+		$res = ['total' => count($out), 'inventory_management' => $inventory, 'stores' => $out];
+		if ($inventory === false) {
+			$res['note'] = 'Складской учёт выключен или недоступен в этой редакции:'
+				. ' остаток у товара один, он в product_get как quantity.';
+		} elseif (!$out) {
+			$res['note'] = 'Складов нет. Остаток товара берите из product_get: quantity.';
+		}
+
+		return $res;
 	}
 
 	/**
