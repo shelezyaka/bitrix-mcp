@@ -11,8 +11,11 @@ namespace Itb\Mcp;
  */
 class Path
 {
-	/** Откуда разрешено читать. */
+	/** Откуда разрешено читать всегда. */
 	const ROOTS = ['local/', 'bitrix/templates/'];
+
+	/** Настройка с дополнительными папками: свой код лежит не только в local. */
+	const OPT = 'files_dirs';
 
 	/** И ещё lib любого модуля: тот же код, что отдаёт api_source, но файлом. */
 	const MODULE_LIB = '~^bitrix/modules/[a-zA-Z0-9_.\-]+/lib(/|$)~';
@@ -60,8 +63,12 @@ class Path
 		return $out ? implode('/', $out) : null;
 	}
 
-	/** Причина отказа либо null, если читать можно. Путь — уже нормализованный. */
-	public static function why(string $rel, bool $dir = false): ?string
+	/**
+	 * Причина отказа либо null, если читать можно. Путь — уже нормализованный.
+	 *
+	 * @param string[] $extra дополнительные папки из настроек сайта
+	 */
+	public static function why(string $rel, bool $dir = false, array $extra = []): ?string
 	{
 		foreach (explode('/', $rel) as $seg) {
 			if (in_array(strtolower($seg), self::DIRS_DENY, true)) {
@@ -69,9 +76,10 @@ class Path
 			}
 		}
 
-		if (!self::inRoots($rel, $dir)) {
+		if (!self::inRoots($rel, $dir, $extra)) {
 			return 'Путь «' . $rel . '» вне разрешённых папок. Открыты: local/,'
-				. ' bitrix/templates/, bitrix/modules/*/lib/.';
+				. ' bitrix/templates/, bitrix/modules/*/lib/'
+				. ($extra ? ', ' . implode('/, ', $extra) . '/' : '') . '.';
 		}
 
 		if ($dir) { return null; }
@@ -89,11 +97,17 @@ class Path
 		return null;
 	}
 
-	private static function inRoots(string $rel, bool $dir): bool
+	private static function inRoots(string $rel, bool $dir, array $extra = []): bool
 	{
 		$probe = $rel . '/';
 		foreach (self::ROOTS as $root) {
 			if (strpos($probe, $root) === 0) { return true; }
+		}
+		// Разрешение по границе папки, а не по началу строки: иначе «adm» открыл
+		// бы и «admin», и «adm_backup».
+		foreach ($extra as $root) {
+			$root = trim((string)$root, '/');
+			if ($root !== '' && strpos($probe, $root . '/') === 0) { return true; }
 		}
 		if (preg_match(self::MODULE_LIB, $rel)) { return true; }
 
@@ -115,7 +129,9 @@ class Path
 		$rel = self::normalize($raw);
 		if ($rel === null) { throw new ToolError('Путь «' . $raw . '» не разбирается'); }
 
-		$why = self::why($rel, $dir);
+		$extra = self::extra();
+
+		$why = self::why($rel, $dir, $extra);
 		if ($why !== null) { throw new ToolError($why); }
 
 		$root = realpath((string)($_SERVER['DOCUMENT_ROOT'] ?? ''));
@@ -132,13 +148,44 @@ class Path
 
 		// Проверка по настоящему пути: симлинк из разрешённой папки мог увести
 		// в запрещённую, а первая проверка видела только имя ссылки.
-		$why = self::why(substr($real, strlen($root) + 1), $dir);
+		$why = self::why(substr($real, strlen($root) + 1), $dir, $extra);
 		if ($why !== null) { throw new ToolError($why); }
 
 		if ($dir && !is_dir($real)) { throw new ToolError('«' . $rel . '» — не папка'); }
 		if (!$dir && !is_file($real)) { throw new ToolError('«' . $rel . '» — не файл'); }
 
 		return $real;
+	}
+
+	/** Дополнительные папки из настроек модуля. */
+	public static function extra(): array
+	{
+		return self::parse((string)\Bitrix\Main\Config\Option::get('itb.mcp', self::OPT, ''));
+	}
+
+	/**
+	 * Разбор настройки с папками — чистая функция, см. tests/files.php.
+	 * Всё, что не разбирается в путь от корня сайта, отбрасывается молча:
+	 * «..» в белом списке — это не опечатка, а дыра.
+	 *
+	 * @return string[]
+	 */
+	public static function parse(string $raw): array
+	{
+		$out = [];
+		foreach (preg_split('~[,\r\n]+~', $raw) ?: [] as $one) {
+			$rel = self::normalize((string)$one);
+			if ($rel === null) { continue; }
+
+			// Открывать корень сайта целиком настройка не должна: для этого
+			// пришлось бы перечислить его явно, а такой записи здесь нет.
+			foreach (explode('/', $rel) as $seg) {
+				if (in_array(strtolower($seg), self::DIRS_DENY, true)) { continue 2; }
+			}
+			if (!in_array($rel, $out, true)) { $out[] = $rel; }
+		}
+
+		return $out;
 	}
 
 	/** Путь от корня сайта: в ответах наружу абсолютных путей не показываем. */

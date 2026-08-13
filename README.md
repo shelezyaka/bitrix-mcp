@@ -191,6 +191,12 @@ claude mcp add --transport http bitrix https://САЙТ/mcp/ \
 | `/local/` — свой код, компоненты, шаблоны, `php_interface` | `/bitrix/php_interface/` — там `dbconn.php` |
 | `/bitrix/templates/` | `/bitrix/modules/*/` вне `lib/` |
 | `/bitrix/modules/*/lib/` | корень сайта, `/upload/`, `.git`, `node_modules` |
+| папки из настройки «дополнительные» | всё остальное |
+
+Дополнительные папки задаются в настройках, если свой код лежит не в `/local/`:
+скажем, `adm`. Разрешение идёт по границе папки — `adm` не открывает `admin`, —
+и внутри действуют те же запреты по имени файла, расширению и вложенным
+`.git`, `node_modules`, `upload`. Запись с `..` отбрасывается при сохранении.
 
 Поверх этого — два независимых слоя. По имени закрыты `dbconn.php`,
 `.settings.php`, `.settings_extra.php`, `.env`, `.htpasswd`, `.my.cnf`, `.npmrc`

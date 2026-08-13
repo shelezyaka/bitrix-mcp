@@ -60,6 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
 			Option::set($module_id, 'files', empty($_POST['files']) ? 'N' : 'Y');
+			// Папки нормализуем тем же разбором, что и проверка пути: в настройке
+			// должно лежать ровно то, что будет действовать.
+			Option::set($module_id, 'files_dirs',
+				implode(', ', \Itb\Mcp\Path::parse((string)($_POST['files_dirs'] ?? ''))));
 			Option::set($module_id, 'sql', empty($_POST['sql']) ? 'N' : 'Y');
 			// Белый список нормализуем тем же разбором, что и проверка запроса:
 			// иначе в настройке может лежать одно, а действовать другое.
@@ -431,12 +435,23 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			echo Option::get($module_id, 'files', 'N') === 'Y' ? ' checked' : ''; ?>>
 			добавляет <code>file_read</code>, <code>file_list</code>, <code>file_grep</code></td>
 	</tr>
+	<tr>
+		<td>Дополнительные папки (через запятую):</td>
+		<td><textarea name="files_dirs" rows="2" cols="50"><?php
+			echo htmlspecialcharsbx((string)Option::get($module_id, 'files_dirs', '')); ?></textarea>
+			<br><span style="color:#777">от корня сайта, например <code>adm</code> —
+			если свой код лежит не в <code>/local/</code></span></td>
+	</tr>
 	<tr><td colspan="2" style="color:#777">
 		Дополняет разведку API там, где она бессильна: компоненты, шаблоны,
 		<code>php_interface</code> и обычные функции классами не являются, и рефлексия
 		их не видит.<br>
-		Читать разрешено только из <code>/local/</code>, <code>/bitrix/templates/</code>
-		и <code>/bitrix/modules/*/lib/</code>. Остальное отвергается, включая
+		Читать разрешено из <code>/local/</code>, <code>/bitrix/templates/</code>,
+		<code>/bitrix/modules/*/lib/</code> и того, что перечислено выше. Разрешение идёт
+		по границе папки: <code>adm</code> не открывает <code>admin</code>. Внутри
+		дополнительной папки действуют те же запреты — по имени файла, по расширению и
+		по вложенным <code>.git</code>, <code>node_modules</code>, <code>upload</code>.
+		Остальное отвергается, включая
 		<code>/bitrix/php_interface/</code>, где лежит <code>dbconn.php</code>. Отдельно
 		закрыты по имени <code>dbconn.php</code>, <code>.settings.php</code>,
 		<code>.env</code>, <code>.htpasswd</code> и ключи, а также папки

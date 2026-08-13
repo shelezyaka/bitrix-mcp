@@ -17,18 +17,18 @@ function is_(string $what, $got, $want) {
 }
 
 /** Читать можно — why() молчит. */
-function may(string $rel, bool $dir = false) {
+function may(string $rel, bool $dir = false, array $extra = []) {
 	global $ok, $bad;
-	$why = Path::why($rel, $dir);
+	$why = Path::why($rel, $dir, $extra);
 	if ($why === null) { $ok++; return; }
 	$bad++;
 	printf("  - «%s» должен читаться, а отказ: %s\n", $rel, $why);
 }
 
 /** Читать нельзя — why() обязан назвать причину. */
-function mayNot(string $rel, bool $dir = false) {
+function mayNot(string $rel, bool $dir = false, array $extra = []) {
 	global $ok, $bad;
-	$why = Path::why($rel, $dir);
+	$why = Path::why($rel, $dir, $extra);
 	if ($why !== null) { $ok++; return; }
 	$bad++;
 	printf("  - «%s» ОТКРЫТ, а не должен\n", $rel);
@@ -107,6 +107,40 @@ mayNot('bitrix/php_interface', true);
 mayNot('bitrix/modules/iblock/install', true);
 mayNot('upload', true);
 mayNot('', true);
+
+echo "=== дополнительные папки из настроек ===\n";
+$adm = ['adm'];
+may('adm/lib/WarehouseMode.php', false, $adm);
+may('adm/ozon/warehouse-mode/warehouse-mode.js', false, $adm);
+may('adm', true, $adm);
+may('adm/ozon', true, $adm);
+// Без настройки та же папка закрыта.
+mayNot('adm/lib/WarehouseMode.php');
+mayNot('adm', true);
+// Разрешение идёт по границе папки: «adm» не должен открывать «admin».
+mayNot('admin/index.php', false, $adm);
+mayNot('adm_backup/x.php', false, $adm);
+mayNot('bitrix/admin/x.php', false, $adm);
+// Внутри дополнительной папки действуют те же запреты.
+mayNot('adm/dbconn.php', false, $adm);
+mayNot('adm/.env', false, $adm);
+mayNot('adm/logs/error.log', false, $adm);
+mayNot('adm/.git/config', false, $adm);
+// Несколько папок сразу.
+may('shop/inc/x.php', false, ['adm', 'shop/inc']);
+mayNot('shop/other/x.php', false, ['adm', 'shop/inc']);
+
+echo "=== разбор настройки с папками ===\n";
+is_('через запятую', Path::parse('adm, shop/inc'), ['adm', 'shop/inc']);
+is_('через перенос строки', Path::parse("adm\nshop/inc"), ['adm', 'shop/inc']);
+is_('слеши по краям', Path::parse('/adm/'), ['adm']);
+is_('обратные слеши', Path::parse('adm\\ozon'), ['adm/ozon']);
+is_('повтор схлопывается', Path::parse('adm, adm'), ['adm']);
+is_('пусто', Path::parse(''), []);
+// «..» в белом списке — не опечатка, а дыра: такая запись отбрасывается.
+is_('выход вверх отбрасывается', Path::parse('adm/../bitrix'), []);
+is_('закрытая папка отбрасывается', Path::parse('upload, adm'), ['adm']);
+is_('корень сайта не открыть', Path::parse('/'), []);
 
 echo "\n" . ($bad ? "ПРОВАЛОВ: $bad, удачных: $ok\n" : "Все $ok проверок прошли.\n");
 exit($bad ? 1 : 0);

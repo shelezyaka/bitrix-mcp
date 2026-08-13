@@ -111,6 +111,7 @@ class Files
 		$names = scandir($abs);
 		if ($names === false) { throw new ToolError('Папка не читается'); }
 
+		$extra = Path::extra();
 		$items = [];
 		$cut   = false;
 		foreach ($names as $name) {
@@ -128,7 +129,7 @@ class Files
 				// Видно сразу, что из перечисленного получится открыть. Проверка
 				// та же, что у чтения, и по тому же разрешённому пути: иначе
 				// ссылка наружу значилась бы доступной, а file_read её отверг.
-				'readable' => self::resolve($full, $dir) !== null,
+				'readable' => self::resolve($full, $dir, $extra) !== null,
 			];
 		}
 
@@ -158,6 +159,7 @@ class Files
 		$abs = Path::real((string)($a['path'] ?? ''), true);
 		$ci  = !empty($a['ignore_case']);
 
+		$extra    = Path::extra();
 		$hits     = [];
 		$scanned  = 0;
 		$stopped  = '';
@@ -182,7 +184,7 @@ class Files
 			// Проверяем РАЗРЕШЁННЫЙ путь, а не тот, по которому файл нашли:
 			// ссылка local/x.php → bitrix/php_interface/dbconn.php проходит любую
 			// проверку по имени, а прочиталось бы содержимое цели.
-			$full = self::resolve((string)$file->getPathname(), false);
+			$full = self::resolve((string)$file->getPathname(), false, $extra);
 			if ($full === null) { continue; }
 			$rel = Path::relative($full);
 			if ((int)filesize($full) > self::GREP_BYTES) { continue; }
@@ -227,7 +229,7 @@ class Files
 	 * куда он ведёт. Проверять надо второй: одной ссылки из разрешённой папки
 	 * хватило бы, чтобы вынести dbconn.php.
 	 */
-	private static function resolve(string $abs, bool $dir): ?string
+	private static function resolve(string $abs, bool $dir, array $extra): ?string
 	{
 		$real = realpath($abs);
 		if ($real === false) { return null; }
@@ -238,6 +240,6 @@ class Files
 		$rel = Path::relative($real);
 		// relative() вернёт путь как есть, если он вне корня сайта — такой
 		// абсолютный путь белым списком не пройдёт.
-		return Path::why($rel, $dir) === null ? $real : null;
+		return Path::why($rel, $dir, $extra) === null ? $real : null;
 	}
 }
