@@ -39,6 +39,13 @@ has_('тип text', ($p['messages'][0]['content']['type'] ?? '') === 'text');
 has_('номер заказа подставлен',
 	strpos($p['messages'][0]['content']['text'], '185145') !== false);
 
+echo "=== обязательные аргументы ===\n";
+is_('заказ не указан', Prompts::missing('order_trace', [], ['orders']), 'order');
+is_('заказ из пробелов', Prompts::missing('order_trace', ['order' => '  '], ['orders']), 'order');
+is_('заказ указан', Prompts::missing('order_trace', ['order' => '185145'], ['orders']), null);
+is_('у сводки обязательных нет', Prompts::missing('sales_summary', [], ['reports']), null);
+is_('чужой сценарий не проверяется', Prompts::missing('order_trace', [], ['reports']), null);
+
 echo "=== подстановка периода ===\n";
 $text = static function (array $args) {
 	$p = Prompts::get('sales_summary', $args, ['reports']);

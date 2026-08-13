@@ -108,6 +108,11 @@ class Protocol
 		$name = (string)($params['name'] ?? '');
 		$args = isset($params['arguments']) && is_array($params['arguments']) ? $params['arguments'] : [];
 
+		$lack = Prompts::missing($name, $args, $reg->groups());
+		if ($lack !== null) {
+			return self::err($id, self::E_PARAMS, 'Не указан обязательный аргумент: ' . $lack);
+		}
+
 		$out = Prompts::get($name, $args, $reg->groups());
 		if ($out === null) { return self::err($id, self::E_PARAMS, 'Неизвестный сценарий: ' . $name); }
 

@@ -51,8 +51,9 @@ class Stock
 			'since' => $since,
 			'total' => count($items),
 			'items' => $items,
-			'note'  => 'Показаны первые ' . $limit . ' по стоимости остатка; в них лежит '
-				. round($frozen, 2) . '. Цена — базовая, не закупочная.',
+			// Сумма считается по показанным строкам, поэтому и названа так.
+			'note'  => 'В этих ' . count($items) . ' позициях лежит ' . round($frozen, 2)
+				. ' по базовой цене. Отсортировано по стоимости остатка.',
 		];
 	}
 
@@ -76,9 +77,8 @@ class Stock
 			. ' GROUP BY b.PRODUCT_ID'
 			// Спрос обгоняет остаток.
 			. ' HAVING SOLD > 0 AND STOCK < SOLD'
-			// По размеру дефицита, а не по доле: при сортировке по STOCK/SOLD
-			// наверх всплывают нули, проданные по одной штуке, и настоящий
-			// дефицит ходового товара до списка не доходит.
+			// По размеру дефицита: при сортировке по доле наверх всплывают нули,
+			// проданные по штуке, а ходовой дефицит до списка не доходит.
 			. ' ORDER BY SOLD - STOCK DESC';
 
 		$items = [];
@@ -111,10 +111,10 @@ class Stock
 	/** Что искали на сайте. */
 	public static function searchPhrases(array $a): array
 	{
-		$conn = self::init(false);
 		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('search')) {
 			throw new ToolError('Модуль search на этом сайте не установлен');
 		}
+		$conn = self::conn();
 
 		$days  = self::days($a, 30);
 		$limit = self::limit($a);
@@ -169,14 +169,20 @@ class Stock
 		return array_map('intval', $ids);
 	}
 
-	/** @return \Bitrix\Main\DB\Connection */
-	private static function init(bool $catalog = true)
+	/** Склад и продажи: нужны обе части магазина. @return \Bitrix\Main\DB\Connection */
+	private static function init()
 	{
-		if ($catalog && !\Bitrix\Main\Loader::includeModule('catalog')) {
+		if (!\Bitrix\Main\Loader::includeModule('catalog')) {
 			throw new ToolError('Модуль catalog на этом сайте не подключён');
 		}
 		Orders::init();
 
+		return self::conn();
+	}
+
+	/** @return \Bitrix\Main\DB\Connection */
+	private static function conn()
+	{
 		$conn = \Bitrix\Main\Application::getConnection();
 		// Отчёты идут по боевым таблицам магазина: предел времени обязателен.
 		Sql::deadline($conn);

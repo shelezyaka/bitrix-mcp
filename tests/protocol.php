@@ -213,6 +213,15 @@ is_('чужой сценарий — ошибка протокола',
 is_('без имени — ошибка протокола',
 	$rq('prompts/get')['error']['code'], Protocol::E_PARAMS);
 
+$reg->setGroups(['orders']);
+is_('обязательный аргумент назван в ошибке',
+	$rq('prompts/get', ['name' => 'order_trace'])['error']['message'],
+	'Не указан обязательный аргумент: order');
+is_('с аргументом сценарий выдаётся',
+	isset($rq('prompts/get', ['name' => 'order_trace',
+		'arguments' => ['order' => '185145']])['result']['messages']), true);
+$reg->setGroups(['reports']);
+
 // Права токена действуют и здесь: без групп сценариев нет вовсе.
 $reg->setGroups([]);
 is_('без прав список пуст', $rq('prompts/list')['result']['prompts'], []);

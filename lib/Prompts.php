@@ -2,11 +2,8 @@
 namespace Itb\Mcp;
 
 /**
- * Готовые сценарии. Клиент показывает их списком, человек выбирает, а модель
- * получает готовую постановку задачи вместо «спроси как-нибудь про продажи».
- *
- * Без Битрикса — см. tests/prompts.php. Сценарий показывается, только если
- * токену выданы нужные группы: предлагать то, чего нельзя вызвать, — обман.
+ * Готовые сценарии: клиент показывает их списком, модель получает постановку
+ * задачи. Отбор по группам токена. Без Битрикса — см. tests/prompts.php.
  */
 class Prompts
 {
@@ -128,6 +125,20 @@ class Prompts
 		return $out;
 	}
 
+	/** Имя недостающего обязательного аргумента, иначе null. */
+	public static function missing(string $name, array $args, array $groups): ?string
+	{
+		$all = self::all($groups);
+		if (!isset($all[$name])) { return null; }
+
+		foreach ($all[$name]['arguments'] as $arg) {
+			if (empty($arg['required'])) { continue; }
+			if (trim((string)($args[$arg['name']] ?? '')) === '') { return (string)$arg['name']; }
+		}
+
+		return null;
+	}
+
 	/** Готовое сообщение для prompts/get; null — сценария нет или он не выдан. */
 	public static function get(string $name, array $args, array $groups): ?array
 	{
@@ -146,10 +157,8 @@ class Prompts
 	}
 
 	/**
-	 * Подстановка значений в текст сценария.
-	 *
-	 * Пустой аргумент не оставляет дыру в тексте, а исчезает вместе со своим
-	 * оборотом: «за период с по» модель прочитает как испорченную постановку.
+	 * Подстановка в текст сценария. Пустой аргумент исчезает вместе со своим
+	 * оборотом: «за период с  по» читается как испорченная постановка.
 	 */
 	private static function fill(string $text, array $args): string
 	{
