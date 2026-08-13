@@ -51,13 +51,9 @@ class Sales
 			'limit'   => self::PERIODS_MAX,
 		]);
 
-		$orders = 0;
-		$sum    = 0.0;
 		while ($r = $rs->fetch()) {
 			$cnt = (int)$r['CNT'];
 			$val = (float)$r['SUM_PRICE'];
-			$orders += $cnt;
-			$sum    += $val;
 
 			// DATE() возвращается объектом даты и приводится к формату сайта.
 			// Ярлыки периодов держим в одном виде: 2026-08-06, 2026-32, 2026-08.
@@ -77,6 +73,20 @@ class Sales
 			];
 		}
 
+		// ⚠ Итог считается отдельным запросом по всему периоду, а не сложением
+		// строк: при обрезке списка сумма строк — это итог куска, и выдавать её
+		// за общий значит ошибиться в разы, ничем этого не показав.
+		$sums = OrderTable::getRow([
+			'select'  => ['CNT', 'SUM_PRICE'],
+			'filter'  => $filter,
+			'runtime' => [
+				new ExpressionField('CNT', 'COUNT(1)'),
+				new ExpressionField('SUM_PRICE', 'SUM(%s)', ['PRICE']),
+			],
+		]);
+		$orders = (int)($sums['CNT'] ?? 0);
+		$sum    = (float)($sums['SUM_PRICE'] ?? 0);
+
 		$out = [
 			'step'   => $by,
 			'from'   => (string)($a['from'] ?? 'без нижней границы'),
@@ -86,8 +96,9 @@ class Sales
 			'periods' => $rows,
 		];
 		if (count($rows) >= self::PERIODS_MAX) {
-			$out['note'] = 'Показаны первые ' . self::PERIODS_MAX . ' периодов — сузьте даты'
-				. ' или укрупните шаг.';
+			$out['note'] = 'Периодов больше предела: показаны первые ' . self::PERIODS_MAX
+				. ', по ' . end($rows)['period'] . ' — конец диапазона в список не попал.'
+				. ' Итог в total посчитан за весь период. Укрупните шаг или сузьте даты.';
 		}
 		if (empty($a['with_canceled'])) {
 			$out['note_canceled'] = 'Отменённые заказы не учтены. Нужны — with_canceled: true.';
