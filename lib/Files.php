@@ -76,14 +76,20 @@ class Files
 			'text'  => implode("\n", $part),
 		];
 
+		if ($whole) { $out['lines'] = $count; }
+
 		if ($long) {
 			$out['more'] = 'Строка ' . $from . ' длиннее предела в ' . self::MAX_BYTES
 				. ' Б — показано её начало. Дальше читайте с from ' . ($from + 1) . '.';
+		} elseif (!$part) {
+			// Пустой ответ без объяснения читается как «файл пуст». Пометка про
+			// следующий кусок здесь была бы враньём: читать дальше нечего.
+			$out['more'] = 'Строк с позиции ' . $from . ' нет'
+				. ($whole ? ': в файле их ' . $count . '.' : '.');
 		} elseif ($cut) {
 			$out['more'] = 'Обрыв по объёму: за раз отдаётся не больше ' . self::MAX_BYTES
 				. ' Б. Следующий кусок — from ' . ($from + count($part)) . '.';
 		} elseif ($whole) {
-			$out['lines'] = $count;
 			if ($from + count($part) - 1 < $count) {
 				$out['more'] = 'Показаны не все строки: всего ' . $count . '. Следующий кусок — from '
 					. ($from + count($part)) . '.';
@@ -100,9 +106,14 @@ class Files
 	{
 		$abs = Path::real((string)($a['path'] ?? ''), true);
 
+		// scandir возвращает false, а не пустой массив: приведение к массиву
+		// дало бы строку [false] и лишнюю запись в выдаче.
+		$names = scandir($abs);
+		if ($names === false) { throw new ToolError('Папка не читается'); }
+
 		$items = [];
 		$cut   = false;
-		foreach ((array)scandir($abs) as $name) {
+		foreach ($names as $name) {
 			if ($name === '.' || $name === '..') { continue; }
 			if (count($items) >= self::LIST_MAX) { $cut = true; break; }
 
@@ -155,9 +166,12 @@ class Files
 		// Симлинки не разворачиваем в обход границы: обход в каталог по ссылке
 		// не идёт (RecursiveDirectoryIterator без FOLLOW_SYMLINKS), а ссылку на
 		// файл отсекает resolve() ниже.
+		// CATCH_GET_CHILD: одна папка без прав чтения иначе роняет весь обход, и
+		// поиск возвращает ошибку вместо того, что успел найти.
 		$it = new \RecursiveIteratorIterator(
 			new \RecursiveDirectoryIterator($abs, \FilesystemIterator::SKIP_DOTS),
-			\RecursiveIteratorIterator::LEAVES_ONLY
+			\RecursiveIteratorIterator::LEAVES_ONLY,
+			\RecursiveIteratorIterator::CATCH_GET_CHILD
 		);
 
 		foreach ($it as $file) {

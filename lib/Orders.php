@@ -147,17 +147,22 @@ class Orders
 		if (($a['to'] ?? '') !== '')   { $filter['<DATE_INSERT']  = self::date((string)$a['to'], true); }
 		if (($a['status'] ?? '') !== '') { $filter['=STATUS_ID'] = (string)$a['status']; }
 
-		$sum = static function (string $name, string $expr, array $from) {
-			return new \Bitrix\Main\ORM\Fields\ExpressionField($name, $expr, $from);
+		// ⚠ Имя вычисляемого поля не должно совпадать с полем таблицы. Запрос
+		// работает на КЛОНЕ сущности, а клон перезаписывает поле молча, без
+		// предупреждения (Entity::appendField, ветка isClone). Поле SUM_PAID,
+		// названное так же, подменило бы собой колонку, из которой само и
+		// считается. Отсюда PAID_TOTAL.
+		$sum = static function (string $name, string $expr, array $from = []) {
+			return new \Bitrix\Main\ORM\Fields\ExpressionField($name, $expr, $from ?: null);
 		};
 
 		$total = \Bitrix\Sale\Internals\OrderTable::getRow([
-			'select'  => ['CNT', 'SUM_PRICE', 'SUM_PAID', 'CNT_PAID', 'CNT_CANCELED', 'SUM_CANCELED'],
+			'select'  => ['CNT', 'SUM_PRICE', 'PAID_TOTAL', 'CNT_PAID', 'CNT_CANCELED', 'SUM_CANCELED'],
 			'filter'  => $filter,
 			'runtime' => [
-				$sum('CNT', 'COUNT(1)', []),
+				$sum('CNT', 'COUNT(1)'),
 				$sum('SUM_PRICE', 'SUM(%s)', ['PRICE']),
-				$sum('SUM_PAID', 'SUM(%s)', ['SUM_PAID']),
+				$sum('PAID_TOTAL', 'SUM(%s)', ['SUM_PAID']),
 				$sum('CNT_PAID', "SUM(CASE WHEN %s = 'Y' THEN 1 ELSE 0 END)", ['PAYED']),
 				$sum('CNT_CANCELED', "SUM(CASE WHEN %s = 'Y' THEN 1 ELSE 0 END)", ['CANCELED']),
 				$sum('SUM_CANCELED', "SUM(CASE WHEN %s = 'Y' THEN %s ELSE 0 END)", ['CANCELED', 'PRICE']),
@@ -175,7 +180,7 @@ class Orders
 		$rs = \Bitrix\Sale\Internals\OrderTable::getList([
 			'select'  => ['STATUS_ID', 'CNT', 'SUM_PRICE'],
 			'filter'  => $filter,
-			'runtime' => [$sum('CNT', 'COUNT(1)', []), $sum('SUM_PRICE', 'SUM(%s)', ['PRICE'])],
+			'runtime' => [$sum('CNT', 'COUNT(1)'), $sum('SUM_PRICE', 'SUM(%s)', ['PRICE'])],
 			'order'   => ['CNT' => 'DESC'],
 		]);
 		while ($r = $rs->fetch()) {
@@ -188,7 +193,7 @@ class Orders
 		$rs = \Bitrix\Sale\Internals\OrderTable::getList([
 			'select'  => ['USER_ID', 'CNT', 'SUM_PRICE'],
 			'filter'  => $filter,
-			'runtime' => [$sum('CNT', 'COUNT(1)', []), $sum('SUM_PRICE', 'SUM(%s)', ['PRICE'])],
+			'runtime' => [$sum('CNT', 'COUNT(1)'), $sum('SUM_PRICE', 'SUM(%s)', ['PRICE'])],
 			'order'   => ['CNT' => 'DESC'],
 			'limit'   => 10,
 		]);
@@ -203,7 +208,7 @@ class Orders
 			'total' => [
 				'orders'           => $count,
 				'sum'              => $price,
-				'paid_sum'         => round((float)($total['SUM_PAID'] ?? 0), 2),
+				'paid_sum'         => round((float)($total['PAID_TOTAL'] ?? 0), 2),
 				'paid_orders'      => (int)($total['CNT_PAID'] ?? 0),
 				'canceled_orders'  => (int)($total['CNT_CANCELED'] ?? 0),
 				'canceled_sum'     => $canceled,

@@ -95,6 +95,8 @@ class Users
 			return null;
 		}
 
+		// Имена вычисляемых полей не повторяют колонки b_sale_order: клон
+		// сущности перезаписал бы их молча, см. Orders::stats.
 		$row = \Bitrix\Sale\Internals\OrderTable::getRow([
 			'select' => ['CNT', 'SUM_PRICE', 'LAST_DATE'],
 			'filter' => ['=USER_ID' => $userId],
@@ -105,10 +107,18 @@ class Users
 			],
 		]);
 
+		// MAX() по колонке-дате возвращается объектом или строкой в зависимости
+		// от того, унаследовал ли выражение тип поля. В ответ должно уйти одно
+		// и то же в обоих случаях, а не сериализованный объект.
+		$last = $row['LAST_DATE'] ?? null;
+		if ($last instanceof \Bitrix\Main\Type\DateTime || $last instanceof \Bitrix\Main\Type\Date) {
+			$last = $last->format('d.m.Y H:i:s');
+		}
+
 		return [
 			'count' => (int)($row['CNT'] ?? 0),
 			'sum'   => round((float)($row['SUM_PRICE'] ?? 0), 2),
-			'last'  => $row['LAST_DATE'] ?? null,
+			'last'  => $last === null ? null : (string)$last,
 		];
 	}
 }
