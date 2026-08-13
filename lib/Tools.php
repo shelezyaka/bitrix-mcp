@@ -59,6 +59,22 @@ class Tools
 		return $reg;
 	}
 
+	/**
+	 * Группы, включённые на этом сайте. Выключенная группа пуста — значит,
+	 * выдавать её токену нечего, и в админке она недоступна для отметки.
+	 *
+	 * @return string[]
+	 */
+	public static function enabled(): array
+	{
+		$out = [];
+		foreach (self::all() as $group => $tools) {
+			if ($group !== 'site' && $tools) { $out[] = $group; }
+		}
+
+		return $out;
+	}
+
 	/** @return array<string, Tool[]> группа => инструменты */
 	private static function all(): array
 	{

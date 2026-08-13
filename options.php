@@ -133,6 +133,10 @@ if (\Bitrix\Main\Loader::includeModule('iblock')) {
 	}
 }
 
+// Отметить можно только включённую группу: у выключенной инструментов нет,
+// и право на неё — обещание, которое некому исполнить.
+$liveGroups = \Itb\Mcp\Tools::enabled();
+
 $tabs = new CAdminTabControl('itbMcpTabs', [
 	['DIV' => 'tokens',   'TAB' => 'Токены',    'TITLE' => 'Доступ к MCP-серверу'],
 	['DIV' => 'data',     'TAB' => 'Данные',    'TITLE' => 'Какие инфоблоки разрешено читать'],
@@ -206,10 +210,14 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 				<td><?php echo $t['EXPIRES_AT'] ? htmlspecialcharsbx((string)$t['EXPIRES_AT']) : 'бессрочно'; ?></td>
 				<td><?php echo (int)$t['USE_COUNT']; ?></td>
 				<td style="white-space:nowrap">
-					<?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label): ?>
-					<label title="<?php echo htmlspecialcharsbx($label); ?>"><input type="checkbox"
+					<?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label):
+						$live = in_array($key, $liveGroups, true); ?>
+					<label title="<?php echo htmlspecialcharsbx($label
+							. ($live ? '' : ' — группа выключена в настройках модуля')); ?>"<?php
+						echo $live ? '' : ' style="color:#aaa"'; ?>><input type="checkbox"
 						name="g[<?php echo $tid; ?>][]" value="<?php echo htmlspecialcharsbx($key); ?>"<?php
-						echo in_array($key, $gr, true) ? ' checked' : ''; ?>>
+						echo in_array($key, $gr, true) ? ' checked' : '';
+						echo $live ? '' : ' disabled'; ?>>
 						<?php echo htmlspecialcharsbx(\Itb\Mcp\Tools::GROUP_SHORT[$key] ?? $key); ?></label>
 					<?php endforeach; ?>
 					<br><input type="text" name="ib_tok[<?php echo $tid; ?>]" size="16"
@@ -250,12 +258,22 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 	</tr>
 	<tr>
 		<td>Что разрешить:</td>
-		<td><?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label): ?>
-			<label style="display:block"><input type="checkbox" name="groups[]"
-				value="<?php echo htmlspecialcharsbx($key); ?>" checked>
-				<?php echo htmlspecialcharsbx($label); ?></label>
+		<td><?php foreach (\Itb\Mcp\Tools::GROUPS as $key => $label):
+			$live = in_array($key, $liveGroups, true); ?>
+			<label style="display:block<?php echo $live ? '' : ';color:#aaa'; ?>"><input
+				type="checkbox" name="groups[]"
+				value="<?php echo htmlspecialcharsbx($key); ?>"<?php
+				echo $live ? ' checked' : ' disabled'; ?>>
+				<?php echo htmlspecialcharsbx($label);
+				echo $live ? '' : ' <b>— выключена в настройках модуля</b>'; ?></label>
 		<?php endforeach; ?>
-		<span style="color:#777">снимите все — останется только <code>site_info</code></span></td>
+		<?php if (!$liveGroups): ?>
+			<b style="color:#c0392b">Ни одна группа не включена. Откройте инфоблоки на вкладке
+				«Данные» либо включите нужные группы на вкладке «Настройки» — иначе токену
+				будет доступен только <code>site_info</code>.</b>
+		<?php else: ?>
+		<span style="color:#777">снимите все — останется только <code>site_info</code></span>
+		<?php endif; ?></td>
 	</tr>
 	<tr>
 		<td>Инфоблоки (через запятую, пусто — все открытые):</td>

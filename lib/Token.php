@@ -157,7 +157,7 @@ class Token
 	 * Выпуск. Открытый токен возвращается единственный раз за его жизнь.
 	 * @return array{id:int,token:string}
 	 */
-	public static function issue(string $title, ?string $expires = null, ?array $groups = null,
+	public static function issue(string $title, ?string $expires = null, ?array $groups = [],
 		int $userId = 0, ?array $iblocks = null): array
 	{
 		$g  = self::generate();
@@ -168,7 +168,7 @@ class Token
 			'TOKEN_HASH' => $g['hash'],
 			'HINT'       => $g['hint'],
 			'USER_ID'    => $userId,
-			'TOOLS'      => $groups === null ? '' : json_encode(array_values($groups)),
+			'TOOLS'      => self::tools($groups),
 			'IBLOCKS'    => $iblocks === null ? '' : json_encode(array_values(array_map('intval', $iblocks))),
 			'ACTIVE'     => 'Y',
 			'CREATED_AT' => new \Bitrix\Main\Type\DateTime(),
@@ -186,13 +186,33 @@ class Token
 		return ['id' => (int)$r->getId(), 'token' => $g['token']];
 	}
 
-	/** Смена прав уже выпущенного токена. null — «без ограничения». */
+	/** Смена прав. Группы — перечислением, инфоблоки: null — весь белый список. */
 	public static function setRights(int $id, ?array $groups, ?array $iblocks): void
 	{
 		TokenTable::update($id, [
-			'TOOLS'   => $groups === null ? '' : json_encode(array_values($groups)),
+			'TOOLS'   => self::tools($groups),
 			'IBLOCKS' => $iblocks === null ? '' : json_encode(array_values(array_map('intval', $iblocks))),
 		]);
+	}
+
+	/**
+	 * Значение поля TOOLS: только те группы, что включены на сайте.
+	 *
+	 * Выдать право на выключенную группу — обещание, которое некому исполнить:
+	 * инструментов у неё нет. Хуже того, такое право сработало бы позже, когда
+	 * группу включат, — тихо и не тому, кто включал.
+	 */
+	private static function tools(?array $groups): string
+	{
+		$allow = Tools::enabled();
+
+		$out = [];
+		foreach ((array)$groups as $g) {
+			$g = (string)$g;
+			if (in_array($g, $allow, true) && !in_array($g, $out, true)) { $out[] = $g; }
+		}
+
+		return (string)json_encode($out);
 	}
 
 	public static function revoke(int $id): void
