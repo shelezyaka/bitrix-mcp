@@ -115,10 +115,9 @@ class Sql
 			}
 		}
 
-		foreach ($secret as $table => $column) {
+		foreach ($secret as $table => $reason) {
 			if (preg_match('~\b' . preg_quote(strtolower((string)$table), '~') . '\b~', $low)) {
-				return 'Таблица ' . $table . ' закрыта: в ней колонка ' . $column
-					. ' — это ключ или пароль.';
+				return 'Таблица ' . $table . ' закрыта: ' . $reason . '.';
 			}
 		}
 
@@ -180,7 +179,7 @@ class Sql
 		$sql  = self::clean((string)($a['query'] ?? ''));
 		$conn = \Bitrix\Main\Application::getConnection();
 
-		$why = self::why($sql, self::allowed(), self::secretTables($conn));
+		$why = self::why($sql, self::allowed(), self::closed($conn));
 		if ($why !== null) { throw new ToolError($why); }
 
 		$rows = (int)($a['limit'] ?? self::ROWS_DEF);
@@ -244,13 +243,12 @@ class Sql
 		}
 
 		$allow  = self::allowed();
-		$secret = self::secretTables($conn);
+		$secret = self::closed($conn);
 		if ($name !== '' && $allow && !in_array(strtolower($name), array_map('strtolower', $allow), true)) {
 			throw new ToolError('Таблица ' . $name . ' не в белом списке.');
 		}
 		if ($name !== '' && isset($secret[$name])) {
-			throw new ToolError('Таблица ' . $name . ' закрыта: в ней колонка '
-				. $secret[$name] . ' — это ключ или пароль.');
+			throw new ToolError('Таблица ' . $name . ' закрыта: ' . $secret[$name] . '.');
 		}
 
 		if ($name !== '') {
@@ -304,6 +302,22 @@ class Sql
 	}
 
 	/**
+	 * Всё, что закрыто сверх статического списка: таблицы с секретными колонками
+	 * и таблицы highload-блоков, закрытых в настройках.
+	 *
+	 * @return array<string, string> таблица => причина
+	 */
+	public static function closed($conn): array
+	{
+		$out = self::secretTables($conn);
+		foreach (Site::hlClosedTables() as $table => $name) {
+			$out[$table] = 'highload-блок «' . $name . '», закрыт настройкой';
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Таблицы этой базы, где есть колонка с секретным именем.
 	 * Читается из схемы, а не из списка в коде: ключи маркетплейсов и платёжных
 	 * модулей лежат в таблицах, о которых модуль знать не может.
@@ -327,7 +341,8 @@ class Sql
 				. ' AND (' . implode(' OR ', $like) . ') GROUP BY TABLE_NAME');
 			while ($r = $res->fetch()) {
 				$table = (string)($r['TABLE_NAME'] ?? $r['table_name'] ?? '');
-				if ($table !== '') { $out[$table] = (string)($r['COL'] ?? $r['col'] ?? ''); }
+				$col   = (string)($r['COL'] ?? $r['col'] ?? '');
+				if ($table !== '') { $out[$table] = 'в ней колонка ' . $col . ' — это ключ или пароль'; }
 			}
 		} catch (\Throwable $e) {
 			// Схема недоступна — работаем на статическом списке, но молча не

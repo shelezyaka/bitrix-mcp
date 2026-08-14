@@ -101,6 +101,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 				if ($id > 0) { $map[$id] = ['props' => (string)($_POST['props'][$id] ?? '')]; }
 			}
 			\Itb\Mcp\Expose::save($map);
+			// Highload-блоки закрываются перечислением: их обычно мало и почти
+			// все безобидные, а данные бывают в единицах.
+			$hl = [];
+			foreach ((array)($_POST['hl'] ?? []) as $id) {
+				if ((int)$id > 0) { $hl[] = (int)$id; }
+			}
+			Option::set($module_id, \Itb\Mcp\Site::HL_OPT, implode(',', array_unique($hl)));
 			$msg = $map
 				? ('Открыто инфоблоков: ' . count($map) . '. Клиенту нужно перечитать список'
 					. ' инструментов — обычно это переподключение.')
@@ -335,6 +342,35 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			<?php endforeach; ?>
 		</table>
 	</td></tr>
+	<?php
+	$hlAll  = \Itb\Mcp\Site::hlAll();
+	$hlDeny = \Itb\Mcp\Site::hlDenied();
+	?>
+	<?php if ($hlAll): ?>
+	<tr class="heading"><td colspan="2">Highload-блоки</td></tr>
+	<tr><td colspan="2">
+		<p>Здесь наоборот: по умолчанию блоки открыты, отметьте те, что <b>закрыть</b>.
+			Их не будет ни в <code>hl_list</code>, ни в <code>sql_select</code> — ни структуры,
+			ни строк.</p>
+		<p style="color:#777">Блоки заводят под справочники, но в них же складывают
+			что угодно — особенно если сайт дорабатывал сторонний разработчик.
+			Загляните в состав полей, прежде чем оставлять блок открытым.</p>
+		<table class="internal" style="width:100%">
+			<tr class="heading"><td width="60">Закрыть</td><td width="60">ID</td>
+				<td>Название</td><td>Таблица</td></tr>
+			<?php foreach ($hlAll as $b):
+				$off = in_array($b['id'], $hlDeny, true); ?>
+			<tr<?php echo $off ? ' style="background:#fdf0ef"' : ''; ?>>
+				<td style="text-align:center"><input type="checkbox" name="hl[]"
+					value="<?php echo (int)$b['id']; ?>"<?php echo $off ? ' checked' : ''; ?>></td>
+				<td><?php echo (int)$b['id']; ?></td>
+				<td><?php echo htmlspecialcharsbx($b['name']); ?></td>
+				<td><code><?php echo htmlspecialcharsbx($b['table']); ?></code></td>
+			</tr>
+			<?php endforeach; ?>
+		</table>
+	</td></tr>
+	<?php endif; ?>
 	<?php if ($canWrite): ?>
 	<tr><td>&nbsp;</td><td><button type="submit" name="act" value="expose">Сохранить список</button>
 		<span style="color:#777">после изменения клиент должен перечитать инструменты</span></td></tr>

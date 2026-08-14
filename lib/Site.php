@@ -110,6 +110,61 @@ class Site
 		return $out;
 	}
 
+	const HL_OPT = 'hl_deny';
+
+	/** Закрытые highload-блоки: идентификаторы из настройки. @return int[] */
+	public static function hlDenied(): array
+	{
+		$raw = (string)\Bitrix\Main\Config\Option::get('itb.mcp', self::HL_OPT, '');
+
+		$out = [];
+		foreach (preg_split('~[^0-9]+~', $raw) ?: [] as $v) {
+			if ((int)$v > 0 && !in_array((int)$v, $out, true)) { $out[] = (int)$v; }
+		}
+
+		return $out;
+	}
+
+	/** Все highload-блоки: id => имя и таблица. Пусто, если модуля нет. */
+	public static function hlAll(): array
+	{
+		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('highloadblock')
+			|| !\Bitrix\Main\Loader::includeModule('highloadblock')) {
+			return [];
+		}
+
+		$out = [];
+		$rs = \Bitrix\Highloadblock\HighloadBlockTable::getList([
+			'select' => ['ID', 'NAME', 'TABLE_NAME'],
+			'order'  => ['ID' => 'ASC'],
+		]);
+		while ($b = $rs->fetch()) {
+			$out[(int)$b['ID']] = ['id' => (int)$b['ID'], 'name' => (string)$b['NAME'],
+				'table' => (string)$b['TABLE_NAME']];
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Таблицы закрытых блоков — для запрета в sql_select.
+	 * Иначе закрыть блок значило бы спрятать его название, оставив данные.
+	 *
+	 * @return array<string, string> таблица => имя блока
+	 */
+	public static function hlClosedTables(): array
+	{
+		$deny = self::hlDenied();
+		if (!$deny) { return []; }
+
+		$out = [];
+		foreach (self::hlAll() as $id => $b) {
+			if (in_array($id, $deny, true) && $b['table'] !== '') { $out[$b['table']] = $b['name']; }
+		}
+
+		return $out;
+	}
+
 	/** Highload-блоки и состав их полей. Строки читаются через sql_select. */
 	public static function hlBlocks(array $a): array
 	{
@@ -117,20 +172,18 @@ class Site
 			throw new ToolError('Модуль highloadblock на этом сайте не подключён');
 		}
 
+		$deny   = self::hlDenied();
+		$closed = 0;
+
 		$blocks = [];
-		$rs = \Bitrix\Highloadblock\HighloadBlockTable::getList([
-			'select' => ['ID', 'NAME', 'TABLE_NAME'],
-			'order'  => ['ID' => 'ASC'],
-		]);
-		while ($b = $rs->fetch()) {
-			$blocks[(int)$b['ID']] = [
-				'id'     => (int)$b['ID'],
-				'name'   => (string)$b['NAME'],
-				'table'  => (string)$b['TABLE_NAME'],
-				'fields' => [],
-			];
+		foreach (self::hlAll() as $id => $b) {
+			if (in_array($id, $deny, true)) { $closed++; continue; }
+			$blocks[$id] = $b + ['fields' => []];
 		}
-		if (!$blocks) { return ['total' => 0, 'blocks' => []]; }
+		if (!$blocks) {
+			return ['total' => 0, 'blocks' => [],
+				'note' => $closed ? 'Все блоки закрыты настройкой модуля.' : 'Блоков нет.'];
+		}
 
 		$entities = [];
 		foreach (array_keys($blocks) as $id) { $entities[] = 'HLBLOCK_' . $id; }
@@ -152,7 +205,9 @@ class Site
 		}
 
 		return ['total' => count($blocks), 'blocks' => array_values($blocks),
-			'note' => 'Строки highload-блока читаются из его таблицы инструментом sql_select.'];
+			'note' => 'Строки highload-блока читаются из его таблицы инструментом sql_select.'
+				. ($closed ? ' Ещё ' . $closed . ' закрыто настройкой модуля — ни структуры,'
+					. ' ни строк по ним не будет.' : '')];
 	}
 
 	/**
