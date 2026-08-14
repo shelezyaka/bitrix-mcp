@@ -68,11 +68,23 @@ class Sql
 	}
 
 	/**
+	 * Колонки, само имя которых означает секрет. Таблицу с такой колонкой
+	 * закрываем целиком: перечислить руками все сторонние модули нельзя, у
+	 * каждого сайта свой набор — на этом и держится проверка.
+	 *
+	 * Голые KEY и TOKEN не берём: под них попадают CACHE_KEY и TOKEN_ID.
+	 */
+	const SECRET_COLUMNS = ['%PASSWORD%', '%SECRET%', '%CHECKWORD%', '%CREDENTIAL%',
+		'%PRIVATE_KEY%', '%API_KEY%', '%APPKEY%', '%APP_KEY%', '%ACCESS_TOKEN%',
+		'%REFRESH_TOKEN%', '%_TOKEN', 'TOKEN_%', '%OAUTH%', '%OASECRET%', '%PKEY%'];
+
+	/**
 	 * Причина отказа либо null. Запрос — уже очищенный.
 	 *
-	 * @param string[] $allow белый список таблиц; пустой — «все, кроме DENY»
+	 * @param string[] $allow  белый список таблиц; пустой — «все, кроме DENY»
+	 * @param array    $secret таблицы с секретными колонками: имя => колонка
 	 */
-	public static function why(string $sql, array $allow = []): ?string
+	public static function why(string $sql, array $allow = [], array $secret = []): ?string
 	{
 		if ($sql === '') { return 'Пустой запрос'; }
 
@@ -100,6 +112,13 @@ class Sql
 		foreach (self::DENY as $table => $why) {
 			if (preg_match('~\b' . preg_quote($table, '~') . '\b~', $low)) {
 				return 'Таблица ' . $table . ' закрыта: ' . $why . '.';
+			}
+		}
+
+		foreach ($secret as $table => $column) {
+			if (preg_match('~\b' . preg_quote(strtolower((string)$table), '~') . '\b~', $low)) {
+				return 'Таблица ' . $table . ' закрыта: в ней колонка ' . $column
+					. ' — это ключ или пароль.';
 			}
 		}
 
@@ -158,9 +177,10 @@ class Sql
 
 	public static function select(array $a): array
 	{
-		$sql = self::clean((string)($a['query'] ?? ''));
+		$sql  = self::clean((string)($a['query'] ?? ''));
+		$conn = \Bitrix\Main\Application::getConnection();
 
-		$why = self::why($sql, self::allowed());
+		$why = self::why($sql, self::allowed(), self::secretTables($conn));
 		if ($why !== null) { throw new ToolError($why); }
 
 		$rows = (int)($a['limit'] ?? self::ROWS_DEF);
@@ -171,7 +191,6 @@ class Sql
 			throw new ToolError('LIMIT в запросе больше предела ' . self::ROWS_MAX . '.');
 		}
 
-		$conn = \Bitrix\Main\Application::getConnection();
 		self::deadline($conn);
 
 		$start = microtime(true);
@@ -224,9 +243,14 @@ class Sql
 			throw new ToolError('Таблица ' . $name . ' закрыта: ' . self::DENY[strtolower($name)] . '.');
 		}
 
-		$allow = self::allowed();
+		$allow  = self::allowed();
+		$secret = self::secretTables($conn);
 		if ($name !== '' && $allow && !in_array(strtolower($name), array_map('strtolower', $allow), true)) {
 			throw new ToolError('Таблица ' . $name . ' не в белом списке.');
+		}
+		if ($name !== '' && isset($secret[$name])) {
+			throw new ToolError('Таблица ' . $name . ' закрыта: в ней колонка '
+				. $secret[$name] . ' — это ключ или пароль.');
 		}
 
 		if ($name !== '') {
@@ -248,6 +272,9 @@ class Sql
 		while ($t = $res->fetch()) {
 			$table = (string)($t['TABLE_NAME'] ?? $t['table_name'] ?? '');
 			if ($table === '' || isset(self::DENY[strtolower($table)])) { continue; }
+			// Закрытые таблицы не показываем и в списке: их имена подсказывают,
+			// где искать ключи.
+			if (isset($secret[$table])) { continue; }
 			if ($like !== '' && strpos(strtolower($table), $like) === false) { continue; }
 			if ($allow && !in_array(strtolower($table), array_map('strtolower', $allow), true)) { continue; }
 
@@ -274,6 +301,41 @@ class Sql
 			'SET SESSION max_statement_time=' . self::SECONDS] as $sql) {
 			try { $conn->query($sql); return; } catch (\Throwable $e) {}
 		}
+	}
+
+	/**
+	 * Таблицы этой базы, где есть колонка с секретным именем.
+	 * Читается из схемы, а не из списка в коде: ключи маркетплейсов и платёжных
+	 * модулей лежат в таблицах, о которых модуль знать не может.
+	 *
+	 * @return array<string, string> таблица => колонка
+	 */
+	public static function secretTables($conn): array
+	{
+		static $cache = null;
+		if ($cache !== null) { return $cache; }
+
+		$like = [];
+		foreach (self::SECRET_COLUMNS as $mask) {
+			$like[] = "COLUMN_NAME LIKE '" . $mask . "'";
+		}
+
+		$out = [];
+		try {
+			$res = $conn->query('SELECT TABLE_NAME, MIN(COLUMN_NAME) AS COL'
+				. ' FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()'
+				. ' AND (' . implode(' OR ', $like) . ') GROUP BY TABLE_NAME');
+			while ($r = $res->fetch()) {
+				$table = (string)($r['TABLE_NAME'] ?? $r['table_name'] ?? '');
+				if ($table !== '') { $out[$table] = (string)($r['COL'] ?? $r['col'] ?? ''); }
+			}
+		} catch (\Throwable $e) {
+			// Схема недоступна — работаем на статическом списке, но молча не
+			// расширяем доступ: об этом скажет ответ инструмента.
+			return $cache = [];
+		}
+
+		return $cache = $out;
 	}
 
 	/** Белый список из настроек; пустой — ограничения нет. */

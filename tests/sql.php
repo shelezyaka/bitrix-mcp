@@ -112,6 +112,31 @@ may('SELECT * FROM b_user_field');
 may('SELECT * FROM b_user_group WHERE USER_ID = 1');
 may('SELECT * FROM b_option_site');
 
+echo "=== таблицы с секретными колонками ===\n";
+// Список приходит из схемы базы: у каждого сайта свои модули, и ключи Ozon
+// или Wildberries лежат в таблицах, о которых модуль знать не может.
+$secret = ['acrit_exportproplus_profile' => 'OZON_APPKEY', 'b_user_password' => 'PASSWORD',
+	'yamarket_api_oauth2_token' => 'ACCESS_TOKEN'];
+
+function mayNotSecret(string $q) {
+	global $ok, $bad, $secret;
+	$why = Sql::why(Sql::clean($q), [], $secret);
+	if ($why !== null) { $ok++; return; }
+	$bad++;
+	printf("  - «%s» ПРОШЁЛ, а не должен\n", $q);
+}
+mayNotSecret('SELECT * FROM acrit_exportproplus_profile');
+mayNotSecret('SELECT OZON_APPKEY FROM acrit_exportproplus_profile');
+mayNotSecret('SELECT * FROM b_user_password');
+mayNotSecret('SELECT * FROM yamarket_api_oauth2_token');
+mayNotSecret('SELECT o.ID FROM b_sale_order o JOIN b_user_password p ON p.USER_ID = o.USER_ID');
+// Белый список не отменяет и этот запрет.
+is_('белый список не открывает секретную таблицу',
+	Sql::why(Sql::clean('SELECT * FROM b_user_password'), ['b_user_password'], $secret) !== null, true);
+// Соседние таблицы не задеты.
+is_('обычная таблица проходит',
+	Sql::why(Sql::clean('SELECT * FROM b_sale_order'), [], $secret), null);
+
 echo "=== белый список ===\n";
 may('SELECT * FROM b_iblock', ['b_iblock', 'b_iblock_element']);
 may('SELECT * FROM b_iblock_element e JOIN b_iblock i ON i.ID = e.IBLOCK_ID', ['b_iblock', 'b_iblock_element']);
