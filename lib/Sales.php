@@ -91,6 +91,7 @@ class Sales
 			'step'   => $by,
 			'from'   => (string)($a['from'] ?? 'без нижней границы'),
 			'to'     => (string)($a['to'] ?? 'без верхней границы'),
+			'sites'  => Sites::note(Sites::check($a['site'] ?? '')),
 			'total'  => ['orders' => $orders, 'sum' => round($sum, 2),
 				'avg_check' => $orders > 0 ? round($sum / $orders, 2) : 0],
 			'periods' => $rows,
@@ -117,7 +118,7 @@ class Sales
 		$sort  = (string)($a['sort'] ?? 'revenue') === 'quantity' ? 'QTY' : 'REVENUE';
 
 		// По дате заказа, а не строки корзины: собрать могли вчера, оформить сегодня.
-		$filter = self::period($a, 'ORDER.DATE_INSERT');
+		$filter = self::period($a, 'ORDER.DATE_INSERT', 'ORDER.LID');
 		$filter['!=ORDER_ID'] = null;
 		if (empty($a['with_canceled'])) { $filter['=ORDER.CANCELED'] = 'N'; }
 
@@ -223,12 +224,18 @@ class Sales
 		];
 	}
 
-	/** Границы периода одним правилом для всех отчётов. */
-	private static function period(array $a, string $field): array
+	/**
+	 * Границы периода и отбор по сайту одним правилом для всех отчётов.
+	 * $siteField — где лежит код сайта: у заказа это LID, у корзины свой.
+	 */
+	private static function period(array $a, string $field, string $siteField = 'LID'): array
 	{
 		$filter = [];
 		if (($a['from'] ?? '') !== '') { $filter['>=' . $field] = Orders::date((string)$a['from'], false); }
 		if (($a['to'] ?? '') !== '')   { $filter['<' . $field]  = Orders::date((string)$a['to'], true); }
+
+		$site = Sites::check($a['site'] ?? '');
+		if ($site !== null) { $filter['=' . $siteField] = $site; }
 
 		return $filter;
 	}

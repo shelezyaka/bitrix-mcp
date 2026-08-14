@@ -94,6 +94,14 @@ class Data
 		$limit  = self::limit($a);
 		$offset = max(0, (int)($a['offset'] ?? 0));
 
+		// Курсор вместо offset: на живом каталоге страницы «плывут», когда между
+		// вызовами добавляют или снимают с публикации товары.
+		$cursor = (int)($a['cursor'] ?? 0);
+		if ($cursor > 0) {
+			$filter['>ID'] = $cursor;
+			$offset = 0;
+		}
+
 		// Свойства в выдачу не идут, пока не названы: карточка без них 398 байт,
 		// со всеми 138 — 17,6 КБ, то есть двадцать строк дали бы 750 КБ.
 		$want = self::wantedProps($a, $allowed);
@@ -114,6 +122,7 @@ class Data
 				'fields'   => self::FIELDS_LIST,
 				'limit'    => $limit,
 				'offset'   => $offset,
+				'after'    => $cursor,
 				'dropEmpty' => false,
 			];
 			$r = D7::search($spec);
@@ -121,6 +130,7 @@ class Data
 			$out = ['iblock' => $iblock, 'total' => $r['total'], 'shown' => count($r['items']),
 				'offset' => $offset, 'items' => $r['items'], 'engine' => 'orm'];
 			foreach ($r['notes'] as $i => $n) { $out['note' . ($i ?: '')] = $n; }
+			$out = self::withCursor($out, $r['items'], $limit);
 			if ($want === null) {
 				$out['note'] = 'Свойства в выдачу поиска не включены — их ' . count($allowed)
 					. '. Назовите нужные в props либо возьмите карточку целиком через element_get.';
@@ -152,6 +162,7 @@ class Data
 			'offset' => $offset,
 			'items'  => $items,
 		];
+		$out = self::withCursor($out, $items, $limit);
 
 		if ($want === null) {
 			$out['note'] = 'Свойства в выдачу поиска не включены — их ' . count($allowed)
@@ -273,6 +284,21 @@ class Data
 		}
 
 		return ['iblock' => $iblock, 'total' => count($out), 'sections' => $out];
+	}
+
+	/** Курсор следующей порции: последний показанный ID. */
+	private static function withCursor(array $out, array $items, int $limit): array
+	{
+		if (count($items) < $limit) { return $out; }
+
+		$last = end($items);
+		$id   = (int)($last['ID'] ?? 0);
+		if ($id > 0) {
+			$out['next_cursor'] = $id;
+			$out['more'] = 'Показаны не все. Следующая порция — cursor ' . $id . '.';
+		}
+
+		return $out;
 	}
 
 	/** Публичный: тем же правилом пользуется Catalog, у него свой вход в элемент. */

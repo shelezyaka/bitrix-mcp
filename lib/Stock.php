@@ -66,11 +66,14 @@ class Stock
 		$since = self::since($days);
 		$ids   = self::iblocks();
 
+		$site = Sites::check($a['site'] ?? '');
+
 		$sql = 'SELECT b.PRODUCT_ID, MAX(b.NAME) AS NAME, SUM(b.QUANTITY) AS SOLD,'
 			. ' MAX(p.QUANTITY) AS STOCK'
 			. ' FROM b_sale_basket b'
 			. " INNER JOIN b_sale_order o ON o.ID = b.ORDER_ID AND o.CANCELED = 'N'"
 			. " AND o.DATE_INSERT >= '" . $since . "'"
+			. ($site !== null ? " AND o.LID = '" . $site . "'" : '')
 			. ' INNER JOIN b_catalog_product p ON p.ID = b.PRODUCT_ID'
 			. ' INNER JOIN b_iblock_element e ON e.ID = p.ID'
 			. ' WHERE e.IBLOCK_ID IN (' . implode(',', $ids) . ')'
@@ -100,6 +103,7 @@ class Stock
 		return [
 			'days'  => $days,
 			'since' => $since,
+			'sites' => Sites::note($site),
 			'total' => count($items),
 			'items' => $items,
 			'note'  => 'Остаток меньше проданного за ' . $days . ' дн. Сверху — наибольший'
@@ -121,8 +125,13 @@ class Stock
 		$since = self::since($days);
 		$empty = !empty($a['no_results']);
 
+		// Код сайта сверен со списком в базе, а не экранирован: в запрос уходит
+		// только то, что там уже есть.
+		$site = Sites::check($a['site'] ?? '');
+
 		$sql = 'SELECT PHRASE, COUNT(*) AS HITS, MAX(RESULT_COUNT) AS BEST'
 			. " FROM b_search_phrase WHERE TIMESTAMP_X >= '" . $since . "'"
+			. ($site !== null ? " AND SITE_ID = '" . $site . "'" : '')
 			. " AND PHRASE <> ''"
 			. ' GROUP BY PHRASE'
 			. ($empty ? ' HAVING BEST = 0' : '')
@@ -141,6 +150,7 @@ class Stock
 		return [
 			'days'       => $days,
 			'since'      => $since,
+			'sites'      => Sites::note($site),
 			'no_results' => $empty,
 			'total'      => count($items),
 			'items'      => $items,

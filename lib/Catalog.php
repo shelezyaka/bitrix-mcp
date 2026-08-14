@@ -139,9 +139,13 @@ class Catalog
 	{
 		self::init();
 
+		$site   = Sites::check($a['site'] ?? '');
+		$filter = $site === null ? [] : ['=SITE_ID' => $site];
+
 		$out = [];
 		$rs = StoreTable::getList([
 			'select' => ['ID', 'TITLE', 'ADDRESS', 'ACTIVE', 'PHONE', 'SCHEDULE', 'SITE_ID', 'SORT'],
+			'filter' => $filter,
 			'order'  => ['SORT' => 'ASC', 'ID' => 'ASC'],
 		]);
 		while ($r = $rs->fetch()) {

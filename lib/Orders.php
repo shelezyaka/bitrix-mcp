@@ -39,8 +39,17 @@ class Orders
 		if (($a['from'] ?? '') !== '') { $filter['>=DATE_INSERT'] = self::date((string)$a['from'], false); }
 		if (($a['to'] ?? '') !== '')   { $filter['<DATE_INSERT']  = self::date((string)$a['to'], true); }
 
+		$site = Sites::check($a['site'] ?? '');
+		if ($site !== null) { $filter['=LID'] = $site; }
+
 		$limit  = min(max(1, (int)($a['limit'] ?? self::LIMIT_DEF)), self::LIMIT_MAX);
 		$offset = max(0, (int)($a['offset'] ?? 0));
+
+		// Курсор идёт по убыванию ID и сдвигает границу, а не считает пропущенные
+		// строки: на работающем магазине offset «плывёт» — за время разбора одного
+		// дня приходят новые заказы, и вторая страница показывает часть первой.
+		$cursor = (int)($a['cursor'] ?? 0);
+		if ($cursor > 0) { $filter['<ID'] = $cursor; $offset = 0; }
 
 		$rs = \Bitrix\Sale\Internals\OrderTable::getList([
 			'select'      => self::FIELDS,
@@ -56,10 +65,13 @@ class Orders
 		while ($r = $rs->fetch()) { $items[] = self::withNames(self::shape($r)); }
 
 		$out = ['total' => $total, 'shown' => count($items), 'offset' => $offset, 'orders' => $items];
-		if ($total > $offset + count($items)) {
-			$out['more'] = 'Показаны не все: всего ' . $total . '. Следующая порция — offset '
-				. ($offset + count($items)) . '.';
+		if ($items && count($items) >= $limit) {
+			$out['next_cursor'] = (int)$items[count($items) - 1]['ID'];
+			$out['more'] = 'Показаны не все: всего ' . $total . '. Следующая порция — cursor '
+				. $out['next_cursor'] . '.';
 		}
+		$siteNote = Sites::note($site);
+		if ($siteNote !== null) { $out['sites'] = $siteNote; }
 		// Состав заказа и данные покупателя в списке не идут: это ещё запрос на
 		// каждый заказ, а в списке обычно ищут нужный, а не читают все подряд.
 		$out['note'] = 'Товары и данные покупателя — в order_get по конкретному заказу.';
@@ -150,6 +162,9 @@ class Orders
 		if (($a['to'] ?? '') !== '')   { $filter['<DATE_INSERT']  = self::date((string)$a['to'], true); }
 		if (($a['status'] ?? '') !== '') { $filter['=STATUS_ID'] = (string)$a['status']; }
 
+		$site = Sites::check($a['site'] ?? '');
+		if ($site !== null) { $filter['=LID'] = $site; }
+
 		// ⚠ Имя вычисляемого поля не должно совпадать с полем таблицы. Запрос
 		// работает на КЛОНЕ сущности, а клон перезаписывает поле молча, без
 		// предупреждения (Entity::appendField, ветка isClone). Поле SUM_PAID,
@@ -208,9 +223,13 @@ class Orders
 		// которыми не видно, что это роботы маркетплейсов.
 		$byUser = self::withUserNames($byUser);
 
+		$siteNote = Sites::note($site);
+
 		return [
 			'from'  => (string)($a['from'] ?? 'без нижней границы'),
 			'to'    => (string)($a['to'] ?? 'без верхней границы'),
+			'site'  => $site ?? 'все',
+			'sites' => $siteNote,
 			'total' => [
 				'orders'           => $count,
 				'sum'              => $price,

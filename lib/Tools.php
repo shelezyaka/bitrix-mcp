@@ -152,6 +152,8 @@ class Tools
 						'description' => 'Какие свойства вернуть, кодами. Без этого свойств в ответе нет'],
 					'limit'    => ['type' => 'integer', 'minimum' => 1, 'maximum' => Data::LIMIT_MAX,
 						'description' => 'Сколько вернуть, по умолчанию ' . Data::LIMIT_DEF],
+					'cursor'   => ['type' => 'integer',
+						'description' => 'next_cursor из прошлого ответа — следующая порция'],
 					'offset'   => ['type' => 'integer', 'minimum' => 0, 'description' => 'Сдвиг для листания'],
 				],
 				'required' => ['iblock'],
@@ -214,7 +216,11 @@ class Tools
 				'Склады',
 				'Склады магазина: название, адрес, телефон, режим работы. Нужен, чтобы'
 				. ' понимать остатки из product_get — там они приходят по идентификаторам.',
-				['type' => 'object', 'properties' => new \stdClass()],
+				[
+					'type' => 'object',
+					'properties' => ['site' => ['type' => 'string',
+						'description' => 'Код сайта, если склады разнесены по сайтам']],
+				],
 				[Catalog::class, 'stores']
 			);
 		}
@@ -241,6 +247,9 @@ class Tools
 		// и грузить ради неё весь модуль незачем.
 		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('sale')) { return []; }
 
+		$site = ['type' => 'string',
+			'description' => 'Код сайта, если их на установке несколько (список — в site_info)'];
+
 		return [
 			new Tool(
 				'order_search',
@@ -248,10 +257,15 @@ class Tools
 				'Список заказов с отбором по номеру, статусу, датам, оплате и отмене.'
 				. ' Возвращает поля заказа без состава корзины и без данных покупателя —'
 				. ' за ними идите в order_get по конкретному заказу.'
-				. ' Названия статусов и их коды покажет order_statuses.',
+				. ' Названия статусов и их коды покажет order_statuses.' . "\n"
+				. 'Листать лучше по cursor из ответа: offset на работающем магазине'
+				. ' сдвигается, когда приходят новые заказы.',
 				[
 					'type' => 'object',
 					'properties' => [
+						'site'   => $site,
+						'cursor' => ['type' => 'integer',
+							'description' => 'next_cursor из прошлого ответа — следующая порция'],
 						'id'       => ['type' => 'integer', 'description' => 'Внутренний ID заказа'],
 						'account'  => ['type' => 'string', 'description' => 'Номер заказа, как его видит покупатель'],
 						'status'   => ['type' => 'string', 'description' => 'Код статуса, например N или F'],
@@ -304,6 +318,7 @@ class Tools
 						'from'   => ['type' => 'string', 'description' => 'Создан не раньше, ДД.ММ.ГГГГ'],
 						'to'     => ['type' => 'string', 'description' => 'Создан не позже, ДД.ММ.ГГГГ (включительно)'],
 						'status' => ['type' => 'string', 'description' => 'Только этот статус'],
+						'site'   => $site,
 					],
 				],
 				[Orders::class, 'stats']
@@ -406,6 +421,8 @@ class Tools
 		$dates = [
 			'from' => ['type' => 'string', 'description' => 'Начало периода, ДД.ММ.ГГГГ'],
 			'to'   => ['type' => 'string', 'description' => 'Конец периода, ДД.ММ.ГГГГ (включительно)'],
+			'site' => ['type' => 'string',
+				'description' => 'Код сайта, если их на установке несколько (список — в site_info)'],
 		];
 
 		$tools = [
@@ -466,6 +483,10 @@ class Tools
 			'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => Stock::LIMIT_MAX,
 				'description' => 'Сколько позиций, по умолчанию ' . Stock::LIMIT_DEF]];
 
+		// site есть не у всех складских отчётов: у неликвидов и остаток, и продажи
+		// считаются по всей установке, и параметр был бы обманом.
+		$windowSite = $window + ['site' => $dates['site']];
+
 		// Остатки живут в модуле catalog: без него складских отчётов не бывает.
 		if (\Bitrix\Main\ModuleManager::isModuleInstalled('catalog')) {
 			$tools[] = new Tool(
@@ -482,7 +503,7 @@ class Tools
 				'Заканчивается',
 				'Товары, которых продано больше, чем осталось на складе: продажи за период,'
 				. ' текущий остаток и на сколько дней его хватит при том же спросе.',
-				['type' => 'object', 'properties' => $window],
+				['type' => 'object', 'properties' => $windowSite],
 				[Stock::class, 'lowStock']
 			);
 		}
@@ -497,7 +518,7 @@ class Tools
 				. ' это спрос, на который сайт не отвечает.',
 				[
 					'type' => 'object',
-					'properties' => $window + [
+					'properties' => $windowSite + [
 						'no_results' => ['type' => 'boolean',
 							'description' => 'Только фразы без результатов'],
 					],
@@ -812,6 +833,7 @@ class Tools
 		$cat = Data::catalogue();
 
 		return [
+			'sites'           => array_values(Sites::all()),
 			'bitrix_version'  => defined('SM_VERSION') ? SM_VERSION : 'неизвестна',
 			'php_version'     => PHP_VERSION,
 			'server_time'     => date('c'),

@@ -134,6 +134,9 @@ class D7
 		if ($spec['name'] !== '') { $filter['%NAME'] = $spec['name']; }
 		if ($spec['code'] !== '') { $filter['=CODE'] = $spec['code']; }
 		if ($spec['ids'])         { $filter['@ID'] = $spec['ids']; }
+		// Курсор: выборка идёт по возрастанию ID, поэтому следующая порция — всё,
+		// что больше последнего показанного.
+		if (!empty($spec['after'])) { $filter['>ID'] = (int)$spec['after']; }
 
 		if ($spec['section'] > 0) {
 			// Старый API смотрел ещё и таблицу связей, поэтому элемент, привязанный
