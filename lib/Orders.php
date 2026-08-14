@@ -53,7 +53,7 @@ class Orders
 		$total = (int)$rs->getCount();
 
 		$items = [];
-		while ($r = $rs->fetch()) { $items[] = self::shape($r); }
+		while ($r = $rs->fetch()) { $items[] = self::withNames(self::shape($r)); }
 
 		$out = ['total' => $total, 'shown' => count($items), 'offset' => $offset, 'orders' => $items];
 		if ($total > $offset + count($items)) {
@@ -84,7 +84,7 @@ class Orders
 		$row = $rs->fetch();
 		if (!$row) { throw new ToolError('Заказ не найден'); }
 
-		$order = self::shape($row);
+		$order = self::withNames(self::shape($row));
 		$oid   = (int)$row['ID'];
 
 		$basket = [];
@@ -109,6 +109,9 @@ class Orders
 			$props[$code] = ['name' => (string)$p['NAME'], 'value' => $p['VALUE']];
 		}
 		$order['PROPERTIES'] = $props;
+
+		$coupons = Refs::coupons($oid);
+		if ($coupons) { $order['COUPONS'] = $coupons; }
 
 		return $order;
 	}
@@ -201,6 +204,9 @@ class Orders
 			$byUser[] = ['user_id' => (int)$r['USER_ID'], 'orders' => (int)$r['CNT'],
 				'sum' => round((float)$r['SUM_PRICE'], 2)];
 		}
+		// Имена одним запросом: без них разбивка — это список номеров, за
+		// которыми не видно, что это роботы маркетплейсов.
+		$byUser = self::withUserNames($byUser);
 
 		return [
 			'from'  => (string)($a['from'] ?? 'без нижней границы'),
@@ -247,6 +253,50 @@ class Orders
 		$ts = mktime(0, 0, 0, (int)$m[2], (int)$m[1] + ($next ? 1 : 0), (int)$m[3]);
 
 		return \Bitrix\Main\Type\DateTime::createFromTimestamp($ts);
+	}
+
+	/** Логин и имя покупателя к строкам разбивки. */
+	private static function withUserNames(array $rows): array
+	{
+		$ids = [];
+		foreach ($rows as $r) { if ($r['user_id'] > 0) { $ids[] = $r['user_id']; } }
+		if (!$ids) { return $rows; }
+
+		$names = [];
+		$rs = \Bitrix\Main\UserTable::getList([
+			'select' => ['ID', 'LOGIN', 'NAME', 'LAST_NAME'],
+			'filter' => ['@ID' => $ids],
+		]);
+		while ($u = $rs->fetch()) {
+			$full = trim((string)$u['NAME'] . ' ' . (string)$u['LAST_NAME']);
+			$names[(int)$u['ID']] = ['login' => (string)$u['LOGIN'], 'name' => $full];
+		}
+
+		foreach ($rows as &$r) {
+			$n = $names[$r['user_id']] ?? null;
+			$r['login'] = $n['login'] ?? null;
+			$r['name']  = $n['name'] ?? null;
+		}
+		unset($r);
+
+		return $rows;
+	}
+
+	/** Имена рядом с идентификаторами: «DELIVERY_ID 4» сам по себе ничего не значит. */
+	private static function withNames(array $row): array
+	{
+		$maps = [
+			'DELIVERY_ID'    => Refs::deliveries(),
+			'PAY_SYSTEM_ID'  => Refs::paySystems(),
+			'PERSON_TYPE_ID' => Refs::personTypes(),
+		];
+
+		foreach ($maps as $field => $map) {
+			if (!array_key_exists($field, $row)) { continue; }
+			$row[substr($field, 0, -3) . '_NAME'] = $map[(int)$row[$field]] ?? null;
+		}
+
+		return $row;
 	}
 
 	/** Даты — строками, булево — Y/N: тот же вид, что у остальных инструментов. */

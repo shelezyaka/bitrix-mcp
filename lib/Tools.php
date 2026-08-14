@@ -15,6 +15,7 @@ class Tools
 		'orders'  => 'Заказы: список, сводка, заказ целиком, покупатели — с их данными',
 		'api'     => 'Разведка API: классы, сущности, исходники, события, агенты',
 		'reports' => 'Отчёты: динамика продаж, топ товаров, брошенные корзины — без данных покупателей',
+		'forms'   => 'Заявки из веб-форм — с данными тех, кто их оставил',
 		'files'   => 'Файлы: чтение и поиск по коду в local, шаблонах и lib модулей',
 		'sql'     => 'SQL: произвольный SELECT к базе сайта',
 	];
@@ -24,6 +25,7 @@ class Tools
 		'catalog' => 'каталог',
 		'orders'  => 'заказы',
 		'reports' => 'отчёты',
+		'forms'   => 'заявки',
 		'api'     => 'API',
 		'files'   => 'файлы',
 		'sql'     => 'SQL',
@@ -115,8 +117,8 @@ class Tools
 		// Разведка API не зависит от белого списка инфоблоков: она про устройство
 		// кода, а не про данные.
 		$out = ['site' => $site, 'api' => self::apiTools(), 'orders' => self::orderTools(),
-			'reports' => self::reportTools(), 'files' => self::fileTools(),
-			'sql' => self::sqlTools(), 'catalog' => []];
+			'reports' => self::reportTools(), 'forms' => self::formTools(),
+			'files' => self::fileTools(), 'sql' => self::sqlTools(), 'catalog' => []];
 
 		// Инструменты чтения появляются, только если что-то открыто: иначе модель
 		// зовёт их и получает отказ на каждый вызов.
@@ -307,6 +309,28 @@ class Tools
 				[Orders::class, 'stats']
 			),
 			new Tool(
+				'sale_directories',
+				'Справочники магазина',
+				'Расшифровка идентификаторов из заказа: службы доставки, платёжные системы,'
+				. ' типы плательщиков. Коды статусов — в order_statuses.',
+				['type' => 'object', 'properties' => new \stdClass()],
+				[Refs::class, 'directories']
+			),
+			new Tool(
+				'discount_list',
+				'Правила скидок',
+				'Заведённые правила: название, активность, срок, приоритет, используются ли'
+				. ' купоны. Условия применения не отдаются — они хранятся в служебном виде.',
+				[
+					'type' => 'object',
+					'properties' => [
+						'active' => ['type' => 'string', 'enum' => ['Y', 'N'],
+							'description' => 'Только включённые или только выключенные, по умолчанию Y'],
+					],
+				],
+				[Refs::class, 'discounts']
+			),
+			new Tool(
 				'user_get',
 				'Покупатель',
 				'Карточка пользователя по ID, логину или почте: имя, контакты, группы,'
@@ -323,6 +347,46 @@ class Tools
 					],
 				],
 				[Users::class, 'get']
+			),
+		];
+	}
+
+	/**
+	 * Заявки из веб-форм. Отдельная группа: данные те же личные, но заказы
+	 * и заявки читают разные люди.
+	 *
+	 * @return Tool[]
+	 */
+	private static function formTools(): array
+	{
+		if (\Bitrix\Main\Config\Option::get('itb.mcp', 'forms', 'N') !== 'Y') { return []; }
+		if (!\Bitrix\Main\ModuleManager::isModuleInstalled('form')) { return []; }
+
+		return [
+			new Tool(
+				'form_list',
+				'Веб-формы',
+				'Формы сайта: название, символьный код, сколько по ним обращений'
+				. ' и когда пришло последнее.',
+				['type' => 'object', 'properties' => new \stdClass()],
+				[Forms::class, 'forms']
+			),
+			new Tool(
+				'form_results',
+				'Заявки',
+				'Обращения из форм за период вместе с ответами по каждому полю.'
+				. "\n" . 'ВНИМАНИЕ: в ответах то, что писал человек, — имя, телефон, почта.',
+				[
+					'type' => 'object',
+					'properties' => [
+						'form'  => ['type' => 'integer', 'description' => 'ID формы из form_list'],
+						'from'  => ['type' => 'string', 'description' => 'С какой даты, ДД.ММ.ГГГГ'],
+						'to'    => ['type' => 'string', 'description' => 'По какую дату, ДД.ММ.ГГГГ (включительно)'],
+						'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => Forms::LIMIT_MAX,
+							'description' => 'Сколько обращений, по умолчанию ' . Forms::LIMIT_DEF],
+					],
+				],
+				[Forms::class, 'results']
 			),
 		];
 	}

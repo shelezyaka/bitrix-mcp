@@ -19,6 +19,8 @@
 	'Itb\\Mcp\\Data'      => 'lib/Data.php',
 	'Itb\\Mcp\\Catalog'   => 'lib/Catalog.php',
 	'Itb\\Mcp\\Orders'    => 'lib/Orders.php',
+	'Itb\\Mcp\\Refs'      => 'lib/Refs.php',
+	'Itb\\Mcp\\Forms'     => 'lib/Forms.php',
 	'Itb\\Mcp\\Sales'     => 'lib/Sales.php',
 	'Itb\\Mcp\\Stock'     => 'lib/Stock.php',
 	'Itb\\Mcp\\Prompts'   => 'lib/Prompts.php',

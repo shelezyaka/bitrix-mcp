@@ -24,6 +24,8 @@ return [
 	'lib/Data.php',
 	'lib/Catalog.php',
 	'lib/Orders.php',
+	'lib/Refs.php',
+	'lib/Forms.php',
 	'lib/Sales.php',
 	'lib/Stock.php',
 	'lib/Prompts.php',

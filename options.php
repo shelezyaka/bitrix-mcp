@@ -60,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite && check_bitrix_sessid())
 			Option::set($module_id, 'api', empty($_POST['api']) ? 'N' : 'Y');
 			Option::set($module_id, 'orders', empty($_POST['orders']) ? 'N' : 'Y');
 			Option::set($module_id, 'reports', empty($_POST['reports']) ? 'N' : 'Y');
+			Option::set($module_id, 'forms', empty($_POST['forms']) ? 'N' : 'Y');
 			Option::set($module_id, 'files', empty($_POST['files']) ? 'N' : 'Y');
 			// Папки нормализуем тем же разбором, что и проверка пути: в настройке
 			// должно лежать ровно то, что будет действовать.
@@ -392,7 +393,8 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 			echo Option::get($module_id, 'orders', 'N') === 'Y' ? ' checked' : '';
 			echo $hasSale ? '' : ' disabled'; ?>>
 			добавляет <code>order_search</code>, <code>order_get</code>,
-			<code>order_statuses</code>, <code>order_stats</code>, <code>user_get</code>
+			<code>order_statuses</code>, <code>order_stats</code>, <code>user_get</code>,
+			<code>sale_directories</code>, <code>discount_list</code>
 			<?php if (!$hasSale): ?>
 			<br><b style="color:#c0392b">Модуль «Интернет-магазин» (sale) на этом сайте
 				не установлен — заказов нет, включать нечего.</b>
@@ -404,6 +406,23 @@ $tabs = new CAdminTabControl('itbMcpTabs', [
 		целиком. Они уйдут в ответ, а значит
 		за пределы сайта — модели и туда, где эта переписка хранится. Включайте, только
 		если понимаете, зачем это нужно, и помните про 152-ФЗ. По умолчанию выключено.
+	</td></tr>
+	<tr class="heading"><td colspan="2">Заявки из веб-форм</td></tr>
+	<?php $hasForm = \Bitrix\Main\ModuleManager::isModuleInstalled('form'); ?>
+	<tr>
+		<td>Разрешить читать заявки:</td>
+		<td><input type="checkbox" name="forms" value="Y"<?php
+			echo Option::get($module_id, 'forms', 'N') === 'Y' ? ' checked' : '';
+			echo $hasForm ? '' : ' disabled'; ?>>
+			добавляет <code>form_list</code> и <code>form_results</code>
+			<?php if (!$hasForm): ?>
+			<br><b style="color:#c0392b">Модуль «Веб-формы» (form) не установлен.</b>
+			<?php endif; ?></td>
+	</tr>
+	<tr><td colspan="2" style="color:#c60">
+		⚠️ В заявках — то, что писал человек: имя, телефон, почта, текст обращения.
+		Группа отдельная от заказов: заявки и заказы обычно читают разные люди.
+		По умолчанию выключена.
 	</td></tr>
 	<tr class="heading"><td colspan="2">Отчёты по продажам</td></tr>
 	<tr>
