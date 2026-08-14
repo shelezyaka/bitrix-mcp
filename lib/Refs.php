@@ -88,10 +88,11 @@ class Refs
 
 		$items = [];
 		$rs = \Bitrix\Sale\Internals\DiscountTable::getList([
-			// SHORT_DESCRIPTION собирается из служебной структуры и наружу приходит
-			// не текстом, поэтому его здесь нет.
+			// DISCOUNT_VALUE и DISCOUNT_TYPE — поля старого движка скидок; у правил
+			// VERSION 3 они пустые, и «0%» в ответе был бы ложью. Величина скидки
+			// лежит в действиях правила, в служебном виде.
 			'select' => ['ID', 'NAME', 'ACTIVE', 'ACTIVE_FROM', 'ACTIVE_TO', 'SORT', 'PRIORITY',
-				'USE_COUPONS', 'DISCOUNT_VALUE', 'DISCOUNT_TYPE', 'CURRENCY'],
+				'USE_COUPONS', 'VERSION'],
 			'filter' => $filter,
 			'order'  => ['PRIORITY' => 'DESC', 'SORT' => 'ASC'],
 			'limit'  => self::DISCOUNTS_MAX,
@@ -105,19 +106,16 @@ class Refs
 				'to'          => self::date($r['ACTIVE_TO']),
 				'priority'    => (int)$r['PRIORITY'],
 				'use_coupons' => (string)$r['USE_COUPONS'],
-				'value'       => $r['DISCOUNT_VALUE'] === null ? null : (float)$r['DISCOUNT_VALUE'],
-				'type'        => (string)$r['DISCOUNT_TYPE'],
-				'currency'    => (string)$r['CURRENCY'],
+				'version'     => (int)$r['VERSION'],
 			];
 		}
 
 		return [
 			'total' => count($items),
 			'items' => $items,
-			// Условия и действия правила хранятся сериализованными структурами:
-			// читать их как текст бессмысленно, поэтому их здесь нет.
-			'note'  => 'Условия применения правил не отдаются — они хранятся в служебном'
-				. ' виде. Какой купон сработал в заказе, видно в order_get.',
+			'note'  => 'Ни условия, ни величина скидки не отдаются: у правил нового движка'
+				. ' они хранятся в служебном виде. Обычно величина указана в названии.'
+				. ' Какой купон сработал в заказе, видно в order_get.',
 		];
 	}
 

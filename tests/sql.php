@@ -96,6 +96,17 @@ mayNot('SELECT * FROM sitedb.b_user');
 mayNot('SELECT * FROM b_option');
 mayNot('SELECT * FROM b_user_stored_auth');
 mayNot('SELECT * FROM itb_mcp_token');
+// В настройках магазина лежат доступы к эквайрингу: логин и пароль шлюза
+// банка, секретный ключ кассы. Названия служб отдаёт sale_directories.
+mayNot('SELECT CODE_KEY, PROVIDER_VALUE FROM b_sale_bizval');
+mayNot('SELECT * FROM b_sale_cashbox');
+mayNot('SELECT PARAMS FROM b_sale_pay_system_action');
+mayNot('SELECT CONFIG FROM b_sale_delivery_srv');
+mayNot('SELECT o.ID FROM b_sale_order o JOIN b_sale_delivery_srv d ON d.ID = o.DELIVERY_ID');
+// Соседние таблицы заказов остаются открытыми.
+may('SELECT * FROM b_sale_order');
+may('SELECT * FROM b_sale_basket');
+may('SELECT * FROM b_sale_order_coupons');
 // Соседние таблицы с тем же префиксом закрывать не нужно: граница по слову.
 may('SELECT * FROM b_user_field');
 may('SELECT * FROM b_user_group WHERE USER_ID = 1');

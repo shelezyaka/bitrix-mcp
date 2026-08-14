@@ -96,7 +96,11 @@ class Forms
 			throw new ToolError('Модуль form на этом сайте не подключён');
 		}
 
-		return \Bitrix\Main\Application::getConnection();
+		$conn = \Bitrix\Main\Application::getConnection();
+		// На сайте с сотнями тысяч обращений сводка по формам — полный проход.
+		Sql::deadline($conn);
+
+		return $conn;
 	}
 
 	private static function date($v): ?string
